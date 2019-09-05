@@ -1,0 +1,1 @@
+This project serves as the code behind a master's thesis on the topic "recommender systems" carried out by Christian Kloster, Victor Kamp and Rasmus Krusaa from Department of Computer Science on Aalborg University
