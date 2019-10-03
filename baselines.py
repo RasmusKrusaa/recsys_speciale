@@ -1,7 +1,5 @@
 import random
-
 import numpy as np
-
 
 def recommend_random(k : int, max_item_idx : int):
     """
@@ -25,8 +23,5 @@ def most_popular(k: int, R : np.ndarray):
     sorted_item_idx = np.argsort(item_avgs) # sorting items' avg ratings and gives a list with indices
 
     return sorted_item_idx[-k:] # return k last elements (k items with highest avg rating)
-
-if __name__ == '__main__':
-    print(recommend_random(10, 200))
 
 
