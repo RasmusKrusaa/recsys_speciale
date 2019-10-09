@@ -5,7 +5,7 @@ def recommend_random(k : int, max_item_idx : int):
     """
     :param k: number of items to recommend
     :param max_item_idx: largest index of items
-    :returns: k recommended items
+    :returns: list of k recommended items indices
     """
     return random.sample(range(1, max_item_idx), k)
 
@@ -13,7 +13,7 @@ def most_popular(k: int, R : np.ndarray):
     """
     :param k: number of items to recommend
     :param R: user-item interaction matrix
-    :return: k recommended items
+    :return: list of k recommended items indices
     """
     summed_R_on_items = np.sum(R, axis=0) # summing items' ratings
     n_ratings_on_items = np.count_nonzero(R, axis=0) # counting number of items' ratings
