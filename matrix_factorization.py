@@ -2,6 +2,7 @@ import sys
 
 import pandas as pd
 
+import utils
 from evaluation import *
 
 
@@ -19,7 +20,7 @@ class matrix_factorization:
         - alpha (float)     : learning rate
         - beta (float)      : regularization parameter
         """
-        self.R = self.to_ndarray(data)
+        self.R = utils.to_ndarray(data)
         self.n_users, self.n_items = self.R.shape
         self.K = K
         self.epochs = epochs
@@ -95,15 +96,3 @@ class matrix_factorization:
                      self.beta * (np.square(np.linalg.norm(user_profile) + np.square(np.linalg.norm(item_profile))))
 
 
-    def to_ndarray(self, data : pd.DataFrame):
-        n_users = data['user'].max()
-        n_items = data['item'].max()
-        result = np.zeros((n_users, n_items))
-        for row in data.itertuples(index=False, name='row'):
-            user_id = row.user - 1
-            item_id = row.item - 1
-            rating = row.rating
-
-            result[user_id, item_id] = rating
-
-        return result
