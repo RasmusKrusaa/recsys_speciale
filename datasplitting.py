@@ -25,14 +25,20 @@ def k_split(k : int, path_to_data : str):
 
     for split in range(k):
         # computing users to use in this split
-        current_users = users[split * users_in_split : (split + 1) * users_in_split]
+        test_users = users[split * users_in_split : (split + 1) * users_in_split]
+        train_users = [u
+                       for u in test_users
+                       if u not in users]
         # collecting data for the users in this split
-        current_data = sorted_data[sorted_data['user'].isin(current_users)]
+        test_data = sorted_data[sorted_data['user'].isin(test_users)]
+        train_data = sorted_data[sorted_data['user'].isin(train_users)]
 
         # saving data as csv file in the data directory
-        current_data.to_csv(f'data/split{split + 1}.csv', index=None, header=True)
+        test_data.to_csv(f'data/test{split + 1}.csv', index=None, header=True)
+        train_data.to_csv(f'data/train{split + 1}.csv', index=None, header=True)
 
 if __name__ == '__main__':
     print('Splitting data...')
     k_split(5, 'ml-100k/u.data')
     print('Done splitting')
+
