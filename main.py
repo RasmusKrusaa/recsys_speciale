@@ -1,5 +1,5 @@
 import numpy as np
-import matrix_factorization as mf
+from matrix_factorization import matrix_factorization as mf
 import pandas as pd
 import tensorflow as tf
 
