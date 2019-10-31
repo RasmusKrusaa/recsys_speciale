@@ -18,7 +18,8 @@ def k_split(k : int, path_to_data : str):
     sorted_data = data.sort_values('user')
 
     users = sorted_data['user'].unique()
-    shuffled_users = random.shuffle(users)
+    # shuffling users
+    random.shuffle(users)
 
     n_users = users.size
     users_in_split = math.floor(n_users / k)
@@ -27,8 +28,8 @@ def k_split(k : int, path_to_data : str):
         # computing users to use in this split
         test_users = users[split * users_in_split : (split + 1) * users_in_split]
         train_users = [u
-                       for u in test_users
-                       if u not in users]
+                       for u in users
+                       if u not in test_users]
         # collecting data for the users in this split
         test_data = sorted_data[sorted_data['user'].isin(test_users)]
         train_data = sorted_data[sorted_data['user'].isin(train_users)]
@@ -39,6 +40,6 @@ def k_split(k : int, path_to_data : str):
 
 if __name__ == '__main__':
     print('Splitting data...')
-    k_split(5, 'ml-100k/u.data')
+    k_split(5, 'C:/Users/Rasmus/.surprise_data/ml-100k/ml-100k/u.data')
     print('Done splitting')
 
