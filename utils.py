@@ -3,10 +3,11 @@ from collections import defaultdict
 import typing
 import numpy as np
 import pandas as pd
+import time
 from sklearn.cluster import KMeans
 
 
-def to_ndarray(data : pd.DataFrame):
+def to_ndarray(data: pd.DataFrame):
     n_users = data['user'].max()
     n_items = data['item'].max()
     result = np.zeros((n_users, n_items))
@@ -39,3 +40,18 @@ def cluster_items(xs: np.ndarray, k: int):
 
 def build_testset(data: pd.DataFrame):
     pass
+
+
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
+        else:
+            print('%r  %2.2f ms' % \
+                  (method.__name__, (te - ts) * 1000))
+        return result
+    return timed
