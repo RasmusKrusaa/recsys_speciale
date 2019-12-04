@@ -38,8 +38,15 @@ def cluster_items(xs: np.ndarray, k: int):
     return centroids, labels
 
 
-def build_testset(data: pd.DataFrame):
-    pass
+def build_dataset(filepath: str):
+    """
+    Builds a dataset as list of tuples (user, item, rating)
+
+    :param filepath: Path to file
+    """
+    data = pd.read_csv(filepath)
+    # TODO: make generic for all types of data
+    return list(data[['user', 'item', 'rating']].itertuples(index=False, name=None))
 
 
 def timeit(method):
@@ -54,4 +61,5 @@ def timeit(method):
             print('%r  %2.2f ms' % \
                   (method.__name__, (te - ts) * 1000))
         return result
+
     return timed

@@ -16,13 +16,13 @@ class profile_generation():
     Based on paper: Initial Profile Generation in Recommender Systems Using Pairwise Comparison
     link: https://ieeexplore.ieee.org/document/6212388/
     """
-
-    def __init__(self, model: surprise.SVD, n_clusters: int, testset: List[(int, int, int)]):
+    def __init__(self, model: surprise.SVD, n_clusters: int, testset: List, n_questions: int = 18):
         """
 
         :param model: model learned with surprise library. For example SVD
         :param n_clusters: number of clusters
         """
+        self.blacklisted_clusters = []
         self.testset = testset
         self.algo: surprise.SVD
         self.predictions, self.algo = model
@@ -38,6 +38,7 @@ class profile_generation():
         self.cluster_biases = self.compute_cluster_biases()
         self.cluster_R = self.cluster_ratings()
         self.init_users_with_same_answers = list(range(self.n_users))
+        self.n_questions = n_questions
 
     def compute_cluster_biases(self):
         """
@@ -48,7 +49,7 @@ class profile_generation():
         item_biases = self.item_biases
 
         res = {}
-        for c in range(1, self.n_clusters + 1):
+        for c in range(self.n_clusters):
             items_in_cluster = labels == c
             res[c] = np.average(item_biases[items_in_cluster])
 
@@ -70,25 +71,31 @@ class profile_generation():
             pu = self.user_profiles[u]
             # user bias
             user_bias = self.user_biases[u]
+
+            # (item, rating) pairs for user u
+            ur = self.algo.trainset.ur[u]
+            items_rated = [i for (i, r) in ur]
+
             for c in range(self.n_clusters):
-                # cluster representation
-                qc = self.clusters[c]
-                # cluster bias
-                cluster_bias = self.cluster_biases[c]
-                res[u][c] = round(self.global_avg + cluster_bias + user_bias + np.dot(qc, pu))
+                # if user has rated at least 1 item in the cluster aggregate ratings
+                items_in_cluster = [i for i, x in enumerate(self.labels == c) if x]
+                is_rated = any(i in items_in_cluster for i in items_rated)
+                if is_rated:
+                    # cluster representation
+                    qc = self.clusters[c]
+                    # cluster bias
+                    cluster_bias = self.cluster_biases[c]
+                    res[u][c] = round(self.global_avg + cluster_bias + user_bias + np.dot(qc, pu))
 
         return res
 
-    def compute_cluster_pairwise_value(self, user, cluster_i, cluster_j) -> float:
+    def compute_pairwise_value(self, r_ui, r_uj) -> float:
         """
         equation 4: computes pairwise value between two items for a user
 
-        :param user: id of user
-        :param cluster_i: id of cluster i
-        :param cluster_j: id of cluster j
+        :param r_ui: rating on item or cluster i
+        :param r_uj: rating on item or cluster j
         """
-        r_ui = self.cluster_R[user][cluster_i]  # user's rating on cluster i
-        r_uj = self.cluster_R[user][cluster_j]  # user's rating on cluster j
         if r_ui >= r_uj:
             res = round(((2 * r_ui) / r_uj) - 1)
         else:
@@ -108,8 +115,15 @@ class profile_generation():
         C = defaultdict(list)
         # outcome for each user (computed with equation 4)
         for u in users:
-            res = self.compute_cluster_pairwise_value(u, cluster1, cluster2)
-            C[res].append(u)
+            r_ui = self.cluster_R[u][cluster1]
+            r_uj = self.cluster_R[u][cluster2]
+
+            # if user hasn't rated any items in either cluster1 or 2 add him to empty bucket
+            if r_ui == 0 or r_uj == 0:
+                C[0].append(u)
+            else:
+                res = self.compute_pairwise_value(r_ui, r_uj)
+                C[res].append(u)
 
         return C
 
@@ -133,7 +147,7 @@ class profile_generation():
         for c1, c2 in pairs:
             pair_score = 0
             # if items are the same don't consider them
-            if c1 == c2:
+            if c1 == c2 or c1 in self.blacklisted_clusters or c2 in self.blacklisted_clusters:
                 continue
             # else continue with algorithm
             # compute possible outcomes on c1 and c2 for each user who answered the same so far
@@ -141,8 +155,13 @@ class profile_generation():
             for c in C.keys():
                 # line 6
                 users_with_ratio_c = C[c]
+                # If no or 1 users with ratio c it doesn't make sense to compute determinant,
+                # since it will be 0 for 1 user and for 0 users you cant generate a covariance matrix and thus
+                # can't compute determinant.
+                if len(users_with_ratio_c) < 2:
+                    continue
                 # line 7
-                cov_matrix = np.cov(self.user_biases[users_with_ratio_c])
+                cov_matrix = np.cov(self.user_profiles[users_with_ratio_c])
                 # line 8
                 GV = np.linalg.det(cov_matrix)
                 # line 9
@@ -204,34 +223,15 @@ class profile_generation():
 
         return best_item
 
-    def find_users_who_answered_the_same(self, cluster_i: int, cluster_j: int, answer_i: int, answer_j: int):
-        """
-        Based on newcomer user's answers to items from **cluster_i** and **cluster_j**
-        find the users who answered the same by looking at the cluster ratings.
-
-        :param cluster_i: index of cluster i
-        :param cluster_j: index of cluster j
-        :param answer_i: newcomer user's answer to item from cluster i
-        :param answer_j: newcomer user's answer to item from cluster i
-
-        :rtype: List[int]
-        :return: list of users who answered the same as u
-        """
-        # TODO: find rows in self.cluster_R where users have same rating as answer_i and answer_j
-        res = []
-
-
-
-        return 0
-
-    def select_questions(self, new_user: int):
+    @utils.timeit
+    def find_profile_single_user(self, new_user: int):
         """
         iteratively finding question for newcomer user **new_user**
 
         :param new_user: index of newcomer user in testset
 
-        :rtype:
-        :return:
+        :rtype: np.ndarray
+        :return: profile of newcomer user
         """
         # Initializing users who answered same to all users
         Nv = self.init_users_with_same_answers
@@ -241,34 +241,69 @@ class profile_generation():
                      for u, i, r in self.testset
                      if u == new_user]
 
-        # TODO: dont consider blacklisted pairs
-        res = []
-        while (True):
-            # finding clusters to select items from
+        # To keep track of which items newcomer user has already been asked
+        blacklisted_items = []
+        self.blacklisted_clusters = []
+        for q in range(self.n_questions):
+            # Finding clusters to select items from
             cluster_i, cluster_j = self.select_next_pairwise(Nv)
-            # most popular items for each cluster: dict{cluster index, list[item indices]}
+
+            # Finding most popular items (sorted descending based on avg rating)
+            # for each cluster: dict{cluster index, list[item indices]}
             mp_items = self.most_popular_items_of_clusters()
-            mp_items_cluster_i = mp_items[cluster_i]
-            mp_items_cluster_j = mp_items[cluster_j]
+            # removing items from blacklisted_items (already asked items)
+            mp_items_cluster_i = list(set(mp_items[cluster_i]).difference(blacklisted_items))
+            mp_items_cluster_j = list(set(mp_items[cluster_j]).difference(blacklisted_items))
+
             # selecting items from the two clusters that maximizes distance to counter cluster
             item_i = self.item_with_max_dist_to_cluster(mp_items_cluster_i, cluster_j)
             item_j = self.item_with_max_dist_to_cluster(mp_items_cluster_j, cluster_i)
 
+            print(f'Found question #{q + 1}: {item_i} vs {item_j} from clusters: {cluster_i} and {cluster_j}')
+            # making sure items are not asked again
+            blacklisted_items.append(item_i)
+            blacklisted_items.append(item_j)
+            # blacklisting clusters if no more items to select for questions in those clusters
+            cluster_i_empty = not set(mp_items[cluster_i]).difference(blacklisted_items)
+            cluster_j_empty = not set(mp_items[cluster_j]).difference(blacklisted_items)
+            if cluster_i_empty:
+                self.blacklisted_clusters.append(cluster_i)
+            if cluster_j_empty:
+                self.blacklisted_clusters.append(cluster_j)
+
             # find answer (i.e. rating) of item i and j
             answer_i = [r for (u, i, r) in u_answers if i == item_i]
-            # if newcomer user has rated item use rating o.w. use 0
-            if answer_i:
-                answer_i = answer_i[0]
-            else: answer_i = 0
             answer_j = [r for (u, i, r) in u_answers if i == item_j]
-            if answer_j:
+            # if newcomer user has rated item use rating o.w. use 0 (unknown)
+            if answer_i and answer_j:
+                answer_i = answer_i[0]
                 answer_j = answer_j[0]
-            else: answer_j = 0
 
-            # finding users
-            Nv = self.find_users_who_answered_the_same(cluster_i, cluster_j, answer_i, answer_j)
+                # computing pairwise value between items
+                ratio = self.compute_pairwise_value(answer_i, answer_j)
+            else:
+                ratio = 0
 
-            # TODO: consider this stopping condition
-            # if no users answered the same stop
-            if not Nv:
+            # finding users who answered the same
+            outcomes = self.find_pairwise_outcomes(Nv, cluster_i, cluster_j)
+            # If we have more than 0 users who answered the same use these users for next question
+            if outcomes[ratio]:
+                Nv = outcomes[ratio]
+            else:
                 break
+
+        avg_profile = np.average(self.user_profiles[Nv], axis=0)
+        return avg_profile
+
+    def run(self) -> {int, np.ndarray}:
+        """
+        :return: dictionary with key: newcomer user index, value: profile of newcomer users
+        """
+        res = {}
+        users = np.unique([u for (u, i, r) in self.testset])
+        for u in users:
+            print(f'Finding profile of user: {u}')
+            res[u] = self.find_profile_single_user(u)
+
+        return res
+
