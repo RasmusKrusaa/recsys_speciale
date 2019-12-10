@@ -3,8 +3,7 @@ from tensorflow import keras
 import numpy as np
 import pandas as pd
 #import matplotlib.pyplot as plt
-import evaluation
-
+from evaluation import evaluation
 
 model = keras.Sequential([
     keras.layers.Dense(18, activation=tf.nn.relu, input_shape=(18,)),
