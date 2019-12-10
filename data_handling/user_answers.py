@@ -1,6 +1,7 @@
 import pandas as pd
 
-def create_answers_for_single_user(data : pd.DataFrame, item_data : pd.DataFrame, genres : list):
+
+def create_answers_for_single_user(data: pd.DataFrame, item_data: pd.DataFrame, genres: list):
     user_id = data['user'].iloc[0]
 
     item_ids = list(data['item'])
