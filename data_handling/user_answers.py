@@ -53,6 +53,7 @@ def create_genre_averages(data_filepath: str, item_data_filepath: str, genres: p
 
 
 if __name__ == '__main__':
+    # TODO: should be changed to be saved as np arrays, as tensorflow doesnt accept DataFrames
     genres = pd.read_csv('../ml-100k/u.genre', sep='|', header=None, skiprows=1)
     genres.columns = ['genre', 'id']
 
