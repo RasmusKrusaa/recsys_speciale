@@ -3,14 +3,9 @@ import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 import pandas as pd
-<<<<<<< HEAD
-import evaluation
-import evaluation_v2
-=======
 from surprise import dump
 #import matplotlib.pyplot as plt
 from evaluation import evaluation
->>>>>>> 6b3ffc2cb392e6dc85f97bd972b0bf7a0fd2ec66
 
 algo: surprise.prediction_algorithms.SVD
 _, algo = dump.load('svd_data/model1.model')
