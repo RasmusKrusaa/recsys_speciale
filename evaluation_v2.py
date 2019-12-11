@@ -65,16 +65,63 @@ def precision_and_recall(predictions: np.ndarray, actuals: np.ndarray, k: int, t
 
     return precision, recall
 
+@utils.timeit
+def rmse(predictions: np.ndarray, actuals: np.ndarray):
+    """
+    Returns the root mean square error, to see how well we recontructed
+    a users actual ratings
+    :param predictions: The predictions of a specific user
+    :param actuals: The ground truth of a specific user
+    """
+
+    ratings = build_pred_actual_tuples(predictions, actuals)
+    calculate_top_rmse = 0
+    for (pred, act) in ratings:
+        calculate_top_rmse += (pred - act) ** 2
+    return np.math.sqrt(calculate_top_rmse / len(ratings))
+
+@utils.timeit
+def mae(predictions: np.ndarray, actuals: np.ndarray):
+    """
+    returns mean absolute error
+    :param predictions: predictions for a specific user
+    :param actuals: ground truth for a specific user
+    """
+
+    ratings = build_pred_actual_tuples(predictions, actuals)
+    calculate_body_mae = 0
+    for (pred, act) in ratings:
+        calculate_body_mae += abs(pred - act)
+    return (1 / len(ratings)) * calculate_body_mae
+
+@utils.timeit
+def mrr(predictions: np.ndarry, actuals: np.ndarray, k: int, average_rating: float):
+    """
+    returns mean reciprocal rank
+    :param predictions: predictions of a specific user
+    :param actuals: actual ratings of a specific user
+    """
+    pred_idx = (-predictions).argsort()[:k]
+    act_idx = (-actuals).argsort() > 0
+    k = k if sum(act_idx) > k else sum(act_idx)
+    for pred_idx in act_idx:
+        if pred_idx
+        mmr_calculate +=
+
 
 if __name__ == '__main__':
-    #actuals = np.random.randint(6, size=1700)
-    #preds = np.random.randint(1, 6, size=1700)
-    actuals = np.array([5, 5, 2, 0, 0, 0, 5])
-    preds = np.array([3, 5, 5, 2, 5, 5, 4])
+    actuals = np.random.randint(6, size=1700)
+    preds = np.random.randint(1, 6, size=1700)
+    #actuals = np.array([5, 5, 2, 0, 0, 0, 5])
+    #preds = np.array([3, 5, 5, 2, 5, 5, 4])
 
 
     prec, reca = precision_and_recall(preds, actuals, 5)
     normalizedcg = ndcg(preds, actuals, 5)
+    trmse = rmse(preds, actuals)
+    tmae = mae(preds, actuals)
+    print(tmae)
+    print(trmse)
     print(normalizedcg)
     print(prec)
     print(reca)
