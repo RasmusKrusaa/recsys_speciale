@@ -1,51 +1,28 @@
-import random
 import numpy as np
 import pandas as pd
 
-import evaluation
+import utils
 
 
-def recommend_random(max_item_idx : int):
+def recommend_random(max_item_idx : int, low: int = 1, high: int = 5) -> np.ndarray:
     """
+    :param high: highest possible rating (excluded)
+    :param low: lowest possible rating (included)
     :param max_item_idx: largest index of items
-    :return: list of recommended items indices
+    :return: list of float random predictions (between low and high params) for each item
     """
-    # TODO: consider if we should just  return k elements
-    return random.sample(range(1, max_item_idx + 1), max_item_idx)
+    return np.random.uniform(low, high, max_item_idx)
 
-def most_popular(R : np.ndarray):
+def most_popular(data: pd.DataFrame) -> np.ndarray:
     """
-    :param R: user-item interaction matrix
-    :return: list of recommended items indices
+    Computing popularity of each item in terms of average ratings and then returns a list of each items' average rating.
+
+    :param R: data in form of (user, item, rating, timestamp) tuples
+    :return: list of average ratings for each item
     """
-    summed_R_on_items = np.sum(R, axis=0) # summing items' ratings
-    n_ratings_on_items = np.count_nonzero(R, axis=0) # counting number of items' ratings
+    R = utils.to_ndarray(data)
 
-    item_avgs = summed_R_on_items / n_ratings_on_items # averaging items' ratings
+    # returning mean of each column
+    return R.mean(axis=0)
 
-    sorted_item_idx = np.argsort(item_avgs) # sorting items' avg ratings and gives a list with indices
-
-    # TODO: consider if we should just  return k elements
-    return np.flip(sorted_item_idx) # return sorted list reverse
-
-if __name__ == '__main__':
-    mp_precision = 0
-    random_precision = 0
-
-    for split in range(1, 6):
-        data = pd.read_csv(f'data/test{split}.csv')
-
-        # most popular
-        mp_relevance = evaluation.compute_relevance_for_most_popular(data, 10)
-        mp_precision += evaluation.precision_at_k(mp_relevance, 10)
-
-        # random
-        random_relevance = evaluation.compute_relevance_for_random(data, 10)
-        random_precision += evaluation.precision_at_k(random_relevance, 10)
-
-    mp_precision /= 5
-    random_precision /= 5
-
-    print(f'Most popular\'s precision@10: {mp_precision}')
-    print(f'Random\'s precision@10: {random_precision}')
 
