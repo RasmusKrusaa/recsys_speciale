@@ -6,6 +6,7 @@ from surprise import dump, Reader, Dataset
 import sklearn
 import surprise
 import time
+import csv
 
 import initial_profile_generation.pairwise_comparison as pc
 import utils
@@ -27,6 +28,10 @@ if __name__ == '__main__':
     profile_generator = pc.profile_generation(model, 30, testset)
 
     profiles = profile_generator.run()
+
+    w = csv.writer(open("../data/init_gen_profiles.csv", "w"))
+    for key, val in profiles.items():
+        w.writerow([key, val])
     print('Done')
 
     # x = np.dot(Q, P.T)
