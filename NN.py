@@ -2,9 +2,25 @@ import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 import pandas as pd
-#import matplotlib.pyplot as plt
 import evaluation
+import evaluation_v2
 
+
+def load_actuals(n_items: int):
+    data = pd.read_csv('data/new_users_data.csv', sep=',')
+    real_user_ids = data['user'].unique()
+    inner_user_ids = list(range(len(real_user_ids)))
+    uid = dict(zip(real_user_ids, inner_user_ids))
+    actuals = np.zeros(shape=(len(inner_user_ids), n_items))
+    for row in data.itertuples(index=False):
+        user = row[0]
+        item = row[1] - 1
+        rating = row[2]
+        if item < n_items:
+            inner_user_id = uid[user]
+            actuals[inner_user_id][item] = rating
+
+    return actuals, uid
 
 model = keras.Sequential([
     keras.layers.Dense(18, activation=tf.nn.relu, input_shape=(18,)),
@@ -13,7 +29,6 @@ model = keras.Sequential([
 
 model.compile("adam", loss="mse", metrics=["mae"])
 
-#data = np.array([[3.3333333333333335,2.9285714285714284,3.3333333333333335,2.2,3.4725274725274726,3.44,4.8,3.925233644859813,3.5,5.0,3.4615384615384617,2.923076923076923,3.6,3.9318181818181817,4.0,3.6153846153846154,3.68,3.6666666666666665]])
 data = pd.read_csv(r'data/old_users_genre_averages.csv', sep=',')
 data = data.drop(data.columns[0], axis=1)
 
@@ -25,33 +40,26 @@ new_data = pd.read_csv('data/new_users_genre_averages.csv', sep=',')
 users = new_data['user'].tolist()
 new_data = new_data.drop(new_data.columns[0], axis=1)
 
+new_user_profiles = np.array(model.predict(new_data))
 
-predictions = np.array(model.predict(new_data))
+actuals, uid = load_actuals(n_items=1661)
+item_profiles = np.genfromtxt('data/item_profiles.csv', delimiter=',')
 
-predicted_variables = np.dot(predictions, pd.read_csv('data/item_profiles.csv', sep=',', header=None))
-predicted_variables = pd.DataFrame(data=predicted_variables, index=users)
+total_prec = 0
+total_recall = 0
+total_ndcg = 0
+for _, inner_uid  in uid.items():
+    act = actuals[inner_uid]
+    pred = np.dot(item_profiles.T, new_user_profiles[inner_uid])
 
+    prec, recall = evaluation_v2.precision_and_recall(pred, act, 20)
+    ndcg = evaluation_v2.ndcg(pred, act, 20)
 
-actual_ratings = pd.read_csv(r'data/new_users_data.csv', sep=',')
-actual_ratings = actual_ratings[actual_ratings.item <= 1661]
+    total_prec += prec
+    total_recall += recall
+    total_ndcg += ndcg
 
- #todo sort items rated for better performance
-for row in predicted_variables.itertuples():
-    items_rated = list(actual_ratings[actual_ratings.user==row[0]].item)
-
-    if len(items_rated) > 0:
-        ratings = list(actual_ratings[actual_ratings.user==row[0]].rating)
-        items = pd.DataFrame(data=ratings, index=items_rated, columns=[row[0]])
-        good_items = items[items[row[0]] > 3]
-        index_of_good_items = good_items.index
-
-        predictions_filtered = [row[i+1] for i in items_rated]
-        predictions_of_items = pd.DataFrame(data=predictions_filtered, index=items_rated, columns=[row[0]])
-        predictions_of_items_ordered = predictions_of_items.sort_values([row[0]], ascending=False)
-
-        index_of_predictions = list(predictions_of_items_ordered.index)
-        relevance = [i if index_of_good_items.contains(i) else 0 for i in index_of_predictions]
-        relevance = [0 if relevance[i]==0 else 1 for i in range(0, len(relevance))]
-
-        print(evaluation.precision_at_top_k(relevance, 10))
-        print(evaluation.ndcg_at_k(relevance, 10))
+n_test = len(uid)
+print(f'Prec@20: {total_prec/n_test}')
+print(f'Recall@20: {total_recall/n_test}')
+print(f'NDCG@20: {total_ndcg/n_test}')

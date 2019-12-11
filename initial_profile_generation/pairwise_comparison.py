@@ -226,12 +226,13 @@ class profile_generation():
     @utils.timeit
     def find_profile_single_user(self, new_user: int):
         """
-        iteratively finding question for newcomer user **new_user**
+        Computing profile and bias for newcomer user, **new_user** by iteratively asking question
+        Profile is the average of user profiles for users with same answers as **new_user**
+        Bias is the average of user biases for users with same anaswers as **new_user**
 
         :param new_user: index of newcomer user in testset
 
-        :rtype: np.ndarray
-        :return: profile of newcomer user
+        :return: profile of newcomer user, questions that user is asked to compare, bias of newcomer user
         """
         # Initializing users who answered same to all users
         Nv = self.init_users_with_same_answers
@@ -244,6 +245,7 @@ class profile_generation():
         # To keep track of which items newcomer user has already been asked
         blacklisted_items = []
         self.blacklisted_clusters = []
+        questions_asked = []
         for q in range(self.n_questions):
             # Finding clusters to select items from
             cluster_i, cluster_j = self.select_next_pairwise(Nv)
@@ -258,7 +260,7 @@ class profile_generation():
             # selecting items from the two clusters that maximizes distance to counter cluster
             item_i = self.item_with_max_dist_to_cluster(mp_items_cluster_i, cluster_j)
             item_j = self.item_with_max_dist_to_cluster(mp_items_cluster_j, cluster_i)
-
+            questions_asked.append((item_i, item_j))
             print(f'Found question #{q + 1}: {item_i} vs {item_j} from clusters: {cluster_i} and {cluster_j}')
             # making sure items are not asked again
             blacklisted_items.append(item_i)
@@ -293,17 +295,19 @@ class profile_generation():
                 break
 
         avg_profile = np.average(self.user_profiles[Nv], axis=0)
-        return avg_profile
+        avg_bias = np.average(self.user_biases[Nv])
+        return avg_profile, questions_asked, avg_bias
 
     def run(self) -> {int, np.ndarray}:
         """
-        :return: dictionary with key: newcomer user index, value: profile of newcomer users
+        :return: dictionary with key: newcomer user index, value: dict with profile and questions - {profile, questions}
         """
         res = {}
         users = np.unique([u for (u, i, r) in self.testset])
         for u in users:
             print(f'Finding profile of user: {u}')
-            res[u] = self.find_profile_single_user(u)
+            profile, questions, avg_bias = self.find_profile_single_user(u)
+            res[u] = {'profile': profile, 'questions': questions, 'avg_bias': avg_bias}
 
         return res
 
