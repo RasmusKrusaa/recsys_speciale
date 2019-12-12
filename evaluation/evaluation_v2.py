@@ -111,11 +111,11 @@ class Metrics2():
         :param actuals: actuals values for a specific user
         :param k: k is a constant that tells how long the recommendation list is
         """
-        n_rated = len([act for (_, act) in ratings[:k] if act > 0])
+        n_rated = len([act for (_, act) in ratings if act > 0])
         # Number of relevant items
-        n_rel = sum((act >= avg_rating) for (_, act) in ratings[:k])
+        n_rel = sum((act >= avg_rating) for (_, act) in ratings)
         # Number of relevant items which are recommended
-        n_rel_and_rec = sum((act >= avg_rating) for (_, act) in ratings[:min(k, n_rated)])
+        n_rel_and_rec = sum((act >= avg_rating) for (_, act) in ratings[:k])
 
         # Fraction of recommended items that are relevant
         precision = n_rel_and_rec / (min(k, n_rated))
@@ -146,8 +146,7 @@ class Metrics2():
                             for (_, act) in ratings]
         n_relevants = sum(binary_relevance)
 
-        rank_u = binary_relevance.index(1) + 1 if n_relevants != 0 else 0
-        return 1 / rank_u
+        return 1 / (binary_relevance.index(1) + 1) if n_relevants != 0 else 0
 
 
 if __name__ == '__main__':
