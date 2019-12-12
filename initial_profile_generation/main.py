@@ -1,54 +1,41 @@
-import random
-from typing import List
-
-import numpy as np
-from surprise import dump, Reader, Dataset
-import sklearn
-import surprise
-import time
 import csv
+import pickle
+
+import surprise
+from surprise import dump
 
 import initial_profile_generation.pairwise_comparison as pc
 import utils
 
-@utils.timeit
-def set_difference(x: List, y: List):
-    return set(x).difference(set(y))
-
-@utils.timeit
-def list_comp_difference(x: List, y: List):
-    return [z for z in x if z not in y]
-
 if __name__ == '__main__':
-    algo: surprise.prediction_algorithms.matrix_factorization.SVD
-    model = dump.load('../svd_data/model1.model')
+    with open('../init_gen_data/results.pickle', 'rb') as f:
+        metrics = pickle.load(f)
 
-    testset = utils.build_dataset('../data/test1.csv')
+    prec = 0
+    recall = 0
+    ndcg = 0
+    mrr = 0
+    rmse = 0
+    mae = 0
+    hr = 0
+    for m in metrics:
+        prec += m['precision']
+        recall += m['recall']
+        ndcg += m['ndcg']
+        mrr += m['mrr']
+        rmse += m['rmse']
+        mae += m['mae']
+        hr += m['hr']
 
-    profile_generator = pc.profile_generation(model, 30, testset)
+    avg_metrics = {'precision': prec/5,
+                   'recall': recall/5 ,
+                   'ndcg': ndcg/5,
+                   'mrr': mrr/5,
+                   'rmse': rmse/5,
+                   'mae': mae/5,
+                   'hr': hr/5}
 
-    profiles = profile_generator.run()
-
-    w = csv.writer(open("../data/init_gen_profiles.csv", "w"))
-    for key, val in profiles.items():
-        w.writerow([key, val])
-    print('Done')
-
-    # x = np.dot(Q, P.T)
-    # x2 = np.dot(P, Q.T)
-    # trainset: surprise.trainset.Trainset = algo.trainset
-    # items_n_ratings =
-    #
-    # clusters, labels = utils.cluster_items(Q, 10)
-    # start_time = time.time()
-    #
-    # q1, q2 = pc.select_next_pairwise(0, trainset.ur.keys(), clusters, labels, P, trainset.ir)
-    #
-    # y = pc.most_popular_items_of_clusters(10, labels, items_n_ratings)
-    # print(f'n_ratings for item {y[0][0]}: {items_n_ratings[y[0][0]]}')
-    # print(f'n_ratings for item {y[0][1]}: {items_n_ratings[y[0][1]]}')
-    # x = pc.cluster_ratings(clusters, P)
-    #
-    # print(f'{time.time() - start_time}')
-
+    print(avg_metrics)
+    with open('../init_gen_data/avg_results.pickle', 'wb') as f:
+        pickle.dump(avg_metrics, f)
 

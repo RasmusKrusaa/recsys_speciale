@@ -27,7 +27,7 @@ class Metrics2():
         Calculates metrics
         """
         metrics = self.metrics.replace(' ', '').split(',')
-        valid_metrics = ['', 'rmse', 'mae', 'ndcg', 'precision', 'recall', 'mrr']
+        valid_metrics = ['', 'rmse', 'mae', 'ndcg', 'precision', 'recall', 'mrr', 'hr']
         assert all(m in valid_metrics for m in metrics), 'Invalid metrics!'
 
         res_dict = {}
@@ -39,6 +39,7 @@ class Metrics2():
         recall = 0
         ndcg = 0
         mrr = 0
+        hr = 0
         for u in range(n_users):
             acts = self.actuals[u]
             preds = self.predictions[u]
@@ -58,6 +59,10 @@ class Metrics2():
             if 'mrr' in metrics or '' in metrics:
                 user_mrr = self.__mrr(ratings, avg_rating)
                 mrr += user_mrr
+            if 'hr' in metrics or '' in metrics:
+                user_hr = self.__hr(ratings, acts, self.k)
+                hr += user_hr
+
 
         # averaging metrics
         # precision and recall
@@ -72,6 +77,8 @@ class Metrics2():
             res_dict['rmse'] = self.__rmse()
         if 'mae' in metrics or '' in metrics:
             res_dict['mae'] = self.__mae()
+        if 'hr' in metrics or '' in metrics:
+            res_dict['hr'] = hr / n_users
 
         return res_dict
 
@@ -86,8 +93,7 @@ class Metrics2():
         """
         Returns the normalized discounted cumulative gain(nDCG) at **k** recommendations
         where order of most relevant items matters, most relevant first ect..
-        :param predictions: predictions for a specific user
-        :param actuals: actuals values for a specific user
+        :param ratings: list of tuples (prediction, actual) sorted descending order
         :param k: k is a constant that tells how long the recommendation list is
         """
         n_rated = sum(actuals > 0)
@@ -105,10 +111,9 @@ class Metrics2():
     def __precision_and_recall(self, ratings: List[Tuple[float, int]], k: int, avg_rating: float):
         """
         Returns the precision and recall in the top k recommended list to a specific user
-        :param threshold: value to determine if a person likes or dislikes an item, if value not given
-        when function is called, the value is default set to 4.
-        :param predictions: predictions for a specific user
-        :param actuals: actuals values for a specific user
+        :param avg_rating: value to determine if a person likes or dislikes an item depended on
+            the users avg rating of all items rated
+        :param ratings: list of tuples (prediction, actual) sorted descending order
         :param k: k is a constant that tells how long the recommendation list is
         """
         n_rated = len([act for (_, act) in ratings if act > 0])
@@ -139,8 +144,7 @@ class Metrics2():
     def __mrr(self, ratings: List[Tuple[float, int]], avg_rating: float):
         """
         returns mean reciprocal rank
-        :param predictions: predictions of a specific user
-        :param actuals: actual ratings of a specific user
+        :param ratings: list of tuples (prediction, actual) sorted descending order
         """
         binary_relevance = [1 if act >= avg_rating else 0
                             for (_, act) in ratings]
@@ -148,13 +152,26 @@ class Metrics2():
 
         return 1 / (binary_relevance.index(1) + 1) if n_relevants != 0 else 0
 
+    def __hr(self, ratings: List[Tuple[float, int]], actuals: np.ndarray, k: int):
+        """
+        Computes the hit-rate of each
+        :param k: number of items recommended
+        :param ratings: list of tuples (prediction, actual) sorted descending order
+        """
+        n_rated = sum(actuals > 0)
+        n_hits = len([act for (_, act) in ratings[:k] if act > 0])
+        return n_hits/min(k, n_rated)
+
+
+
+
 
 if __name__ == '__main__':
     #    actuals = np.random.randint(6, size=1700)
     #    preds = np.random.randint(1, 6, size=1700)
     actuals = np.array([[0, 2, 5]])
     preds = np.array([[5, 4, 5]])
-    n = Metrics2(preds, actuals, 10, metrics='rmse, mae')
+    n = Metrics2(preds, actuals, 2, metrics='hr')
     print(n.calculate())
 
 #   x = build_pred_actual_tuples(preds, actuals)
