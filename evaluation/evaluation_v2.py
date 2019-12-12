@@ -6,8 +6,16 @@ import numpy as np
 import utils
 
 
-class metrics2():
+class Metrics2():
     def __init__(self, predictions: np.ndarray, actuals: np.ndarray, k: int, metrics: str = ''):
+        """
+        Constructor for Metrics2
+
+        :param predictions: n x latent_factors numpy array - n being number of users
+        :param actuals: m x latent_factors numpy array - m being number of items
+        :param k: length of recommended list
+        :param metrics: which metrics to compute (default is all) separated by comma. Can be mae, rmse, precision, recall, ndcg and mrr
+        """
         self.predictions = predictions
         self.actuals = actuals
         self.k = k
@@ -15,14 +23,18 @@ class metrics2():
         pass
 
     def calculate(self):
-        """Calculates metrics measured on predictions and actuals
-        :param actuals:
-        :param predictions:
-        :param metrics: which metrics to compute (MAE, RMSE, ...)
         """
+        Calculates metrics
+        """
+        metrics = self.metrics.replace(' ', '').split(',')
+        valid_metrics = ['', 'rmse', 'mae', 'ndcg', 'precision', 'recall', 'mrr']
+        assert all(m in valid_metrics for m in metrics), 'Invalid metrics!'
+
         res_dict = {}
         n_users, _ = self.predictions.shape
 
+
+        # computing metrics
         precision = 0
         recall = 0
         ndcg = 0
@@ -33,28 +45,35 @@ class metrics2():
             ratings = self.__build_pred_actual_tuples(preds, acts)
             avg_rating = float(np.mean(acts[acts > 0]))
 
-            user_prec, user_recall = self.__precision_and_recall(ratings, self.k, avg_rating)
-            precision += user_prec
-            recall += user_recall
+            # precision and recall
+            if 'precision' in metrics or 'recall' in metrics or '' in metrics:
+                user_prec, user_recall = self.__precision_and_recall(ratings, self.k, avg_rating)
+                precision += user_prec
+                recall += user_recall
+            # ndcg
+            if 'ndcg' in metrics or '' in metrics:
+                user_ndcg = self.__ndcg(ratings, acts, self.k)
+                ndcg += user_ndcg
+            # mrr
+            if 'mrr' in metrics or '' in metrics:
+                user_mrr = self.__mrr(ratings, avg_rating)
+                mrr += user_mrr
 
-            user_ndcg = self.__ndcg(ratings, acts, self.k)
-            ndcg += user_ndcg
-
-            user_mrr = self.__mrr(ratings, avg_rating)
-            mrr += user_mrr
-
-        res_dict['mrr'] = mrr / n_users
-        res_dict['precision'] = precision / n_users
-        res_dict['recall'] = recall / n_users
-        res_dict['ndcg'] = ndcg / n_users
+        # averaging metrics
+        # precision and recall
+        if 'precision' in metrics or 'recall' in metrics or '' in metrics:
+            res_dict['precision'] = precision / n_users
+            res_dict['recall'] = recall / n_users
+        if 'ndcg' in metrics or '' in metrics:
+            res_dict['ndcg'] = ndcg / n_users
+        if 'mrr' in metrics or '' in metrics:
+            res_dict['mrr'] = mrr / n_users
+        if 'rmse' in metrics or '' in metrics:
+            res_dict['rmse'] = self.__rmse()
+        if 'mae' in metrics or '' in metrics:
+            res_dict['mae'] = self.__mae()
 
         return res_dict
-
-        # compute precision og recall for hver række i preds og acts
-        # compute ndcg for hver række i preds og acts
-        # compute rmse for preds og acts
-        # compute mae for preds og acts
-        pass
 
     def __build_pred_actual_tuples(self, predictions: np.ndarray, actuals: np.ndarray):
         # generating (prediction, actual) tuples
@@ -71,7 +90,7 @@ class metrics2():
         :param actuals: actuals values for a specific user
         :param k: k is a constant that tells how long the recommendation list is
         """
-        n_rated = sum(actuals[actuals > 0])
+        n_rated = sum(actuals > 0)
         k = min(k, n_rated)
 
         dcg_relevances = [act for (_, act) in ratings[:k]]
@@ -105,32 +124,17 @@ class metrics2():
 
         return precision, recall
 
-    def __rmse(self, predictions: np.ndarray, actuals: np.ndarray):
+    def __rmse(self):
         """
-        Returns the root mean square error, to see how well we recontructed
-        a users actual ratings
-        :param predictions: The predictions of a specific user
-        :param actuals: The ground truth of a specific user
+        Computes root mean squared error
         """
+        return np.sqrt(np.mean((self.predictions[self.actuals > 0] - self.actuals[self.actuals > 0]) ** 2))
 
-        ratings = self.__build_pred_actual_tuples(predictions, actuals)
-        calculate_top_rmse = 0
-        for (pred, act) in ratings:
-            calculate_top_rmse += (pred - act) ** 2
-        return np.math.sqrt(calculate_top_rmse / len(ratings))
-
-    def __mae(self, predictions: np.ndarray, actuals: np.ndarray):
+    def __mae(self):
         """
-        returns mean absolute error
-        :param predictions: predictions for a specific user
-        :param actuals: ground truth for a specific user
+        Computes mean absolute error
         """
-
-        ratings = self.__build_pred_actual_tuples(predictions, actuals)
-        calculate_body_mae = 0
-        for (pred, act) in ratings:
-            calculate_body_mae += abs(pred - act)
-        return (1 / len(ratings)) * calculate_body_mae
+        return np.mean(abs(self.predictions[self.actuals > 0] - self.actuals[self.actuals > 0]))
 
     def __mrr(self, ratings: List[Tuple[float, int]], avg_rating: float):
         """
@@ -151,7 +155,7 @@ if __name__ == '__main__':
     #    preds = np.random.randint(1, 6, size=1700)
     actuals = np.array([[0, 2, 5]])
     preds = np.array([[5, 4, 5]])
-    n = metrics2(preds, actuals, 10, "mmr")
+    n = Metrics2(preds, actuals, 10, metrics='rmse, mae')
     print(n.calculate())
 
 #   x = build_pred_actual_tuples(preds, actuals)
