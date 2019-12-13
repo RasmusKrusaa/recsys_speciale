@@ -38,8 +38,15 @@ def cluster_items(xs: np.ndarray, k: int):
     return centroids, labels
 
 
-def build_testset(data: pd.DataFrame):
-    pass
+def build_dataset(filepath: str):
+    """
+    Builds a dataset as list of tuples (user, item, rating)
+
+    :param filepath: Path to file
+    """
+    data = pd.read_csv(filepath)
+    # TODO: make generic for all types of data
+    return list(data[['user', 'item', 'rating']].itertuples(index=False, name=None))
 
 
 def timeit(method):
@@ -54,4 +61,28 @@ def timeit(method):
             print('%r  %2.2f ms' % \
                   (method.__name__, (te - ts) * 1000))
         return result
+
     return timed
+
+
+# Print iterations progress
+def print_progress_bar(iteration: int, total: int, prefix: str = '', suffix: str = '', decimals: int = 1,
+                       length: int = 100, fill: str = '█', print_end: str = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    :param iteration: current iteration
+    :param total: total iterations
+    :param prefix: prefix string
+    :param suffix: suffix string
+    :param decimals: positive number of decimals in percent complete
+    :param length: character length of bar
+    :param fill: bar fill character
+    :param print_end: end character (e.g. "\r", "\r\n")
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end=print_end)
+    # Print New Line on Complete
+    if iteration == total:
+        print()

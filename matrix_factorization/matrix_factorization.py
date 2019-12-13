@@ -1,9 +1,6 @@
 import sys
 
-import pandas as pd
-
-import utils
-from evaluation import *
+from evaluation.evaluation import *
 
 
 class matrix_factorization:
