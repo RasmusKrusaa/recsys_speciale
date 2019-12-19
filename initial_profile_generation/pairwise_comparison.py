@@ -314,7 +314,6 @@ class ProfileGeneration():
         return res
 
     def build_tree(self, users: List[int], depth: int = 0):
-        print(f'At depth: {depth}')
         if depth >= self.n_questions or not users:
             return tree.Node(users, None)
 

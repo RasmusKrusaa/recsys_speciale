@@ -190,3 +190,5 @@ class GenreComparison():
             res[u] = {'profile': profile, 'questions': questions, 'bias': avg_bias}
 
         return res
+
+    # TODO: implement tree for genres and preselected items. Find inspiration in pairwise_comparison.py

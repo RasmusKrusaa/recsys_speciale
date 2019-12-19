@@ -15,6 +15,8 @@ class Node():
     def add_parent(self, obj):
         self.parent = obj
 
+    # TODO: implement traverse with actuals vector. Make sure ids of items are inner ids! I.e. the ones from SVD model
+
     def pretty_print(self, prefix: str = ''):
         print(f'{prefix}{self.question}')
         for child in self.children:
