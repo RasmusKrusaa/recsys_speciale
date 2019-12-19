@@ -3,7 +3,7 @@ import math
 import sys
 from collections import defaultdict
 from typing import Dict, List
-
+import tree
 import numpy as np
 import surprise
 from sklearn.cluster import KMeans
@@ -11,17 +11,19 @@ from sklearn.cluster import KMeans
 import utils
 
 
-class profile_generation():
+class ProfileGeneration():
     """
     Based on paper: Initial Profile Generation in Recommender Systems Using Pairwise Comparison
     link: https://ieeexplore.ieee.org/document/6212388/
     """
+
     def __init__(self, model: surprise.SVD, n_clusters: int, testset: List, n_questions: int = 18):
         """
 
         :param model: model learned with surprise library. For example SVD
         :param n_clusters: number of clusters
         """
+        self.blacklisted_pairs = []
         self.blacklisted_clusters = []
         self.testset = testset
         self.algo: surprise.SVD
@@ -89,7 +91,8 @@ class profile_generation():
 
         return res
 
-    def compute_pairwise_value(self, r_ui, r_uj) -> float:
+    @staticmethod
+    def compute_pairwise_value(r_ui, r_uj) -> float:
         """
         equation 4: computes pairwise value between two items for a user
 
@@ -127,9 +130,7 @@ class profile_generation():
 
         return C
 
-
-    def select_next_pairwise(self,
-                             users_who_answered_same: list):
+    def select_next_pairwise(self, users_who_answered_same: list):
         """
         Algorithm 1: selects next pairwise question
         :param users_who_answered_same: set of users, who answered the same as user so far
@@ -147,7 +148,7 @@ class profile_generation():
         for c1, c2 in pairs:
             pair_score = 0
             # if items are the same don't consider them
-            if c1 == c2 or c1 in self.blacklisted_clusters or c2 in self.blacklisted_clusters:
+            if c1 == c2 or (c1, c2) in self.blacklisted_pairs or (c2, c1) in self.blacklisted_pairs:
                 continue
             # else continue with algorithm
             # compute possible outcomes on c1 and c2 for each user who answered the same so far
@@ -188,7 +189,7 @@ class profile_generation():
 
         for cluster in range(self.n_clusters):
             # list of item indices sorted ascending based on times rated
-            mp_items = [item
+            mp_items = [item + 1
                         for item in np.argsort(items_n_ratings)
                         if self.labels[item] == cluster]
             # taking most rated items and reversing to get descending order
@@ -223,7 +224,6 @@ class profile_generation():
 
         return best_item
 
-    @utils.timeit
     def find_profile_single_user(self, new_user: int):
         """
         Computing profile and bias for newcomer user, **new_user** by iteratively asking question
@@ -302,6 +302,8 @@ class profile_generation():
         """
         :return: dictionary with key: newcomer user index, value: dict with profile and questions - {profile, questions}
         """
+        tree = self.build_tree()
+
         res = {}
         users = np.unique([u for (u, i, r) in self.testset])
         for u in users:
@@ -310,4 +312,38 @@ class profile_generation():
             res[u] = {'profile': profile, 'questions': questions, 'avg_bias': avg_bias}
 
         return res
+
+    def build_tree(self, users: List[int], depth: int = 0):
+        print(f'At depth: {depth}')
+        if depth >= self.n_questions or not users:
+            return tree.Node(users, None)
+
+        clusters = self.select_next_pairwise(users)
+        self.blacklisted_pairs.append(clusters)
+        c1, c2 = clusters
+
+        mp_items = self.most_popular_items_of_clusters()
+        mp_items_cluster_i = mp_items[c1]
+        mp_items_cluster_j = mp_items[c2]
+
+        # selecting items (inner ids) from the two clusters that maximizes distance to counter cluster
+        item_i = self.item_with_max_dist_to_cluster(mp_items_cluster_i, c2)
+        item_j = self.item_with_max_dist_to_cluster(mp_items_cluster_j, c1)
+        question = (item_i, item_j)
+
+        node = tree.Node(users, question)
+
+        outcomes = self.find_pairwise_outcomes(users, c1, c2)
+        # if only 1 outcome -> we can't split anymore
+        if len(outcomes) == 1:
+            return node
+
+        for ratio, users_with_ratio in outcomes.items():
+            child = self.build_tree(users_with_ratio, depth + 1)
+            child.parent = node
+            child.ratio = ratio
+            node.add_child(child)
+
+        return node
+
 
