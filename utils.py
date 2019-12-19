@@ -38,13 +38,19 @@ def cluster_items(xs: np.ndarray, k: int):
     return centroids, labels
 
 
-def build_dataset(filepath: str):
+def build_dataset(filepath: str, header: bool = False):
     """
     Builds a dataset as list of tuples (user, item, rating)
 
     :param filepath: Path to file
     """
-    data = pd.read_csv(filepath)
+
+    if not header:
+        data = pd.read_csv(filepath, sep='\t', header=None)
+        data.columns = ['user', 'item', 'rating', 'timestamp']
+    else:
+        data = pd.read_csv(filepath, sep=',')
+
     # TODO: make generic for all types of data
     return list(data[['user', 'item', 'rating']].itertuples(index=False, name=None))
 

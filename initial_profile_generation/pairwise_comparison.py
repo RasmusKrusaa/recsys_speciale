@@ -127,11 +127,11 @@ class profile_generation():
 
         return C
 
+
     def select_next_pairwise(self,
                              users_who_answered_same: list):
         """
         Algorithm 1: selects next pairwise question
-
         :param users_who_answered_same: set of users, who answered the same as user so far
 
         :rtype: (int, int)

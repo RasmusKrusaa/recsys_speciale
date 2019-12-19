@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import surprise
 from surprise import dump
+from typing import Dict
 
 import evaluation.evaluation_v2
 
@@ -16,21 +17,23 @@ def stupid_reader(string: str):
     return res
 
 
-def load_actuals(n_items: int, split: int):
-    data = pd.read_csv(f'../data/test{split}.csv', sep=',')
-    real_user_ids = data['user'].unique()
-    inner_user_ids = list(range(len(real_user_ids)))
-    uid = dict(zip(real_user_ids, inner_user_ids))
-    actuals = np.zeros(shape=(len(inner_user_ids), n_items))
+def load_actuals(data: pd.DataFrame, raw2inner_id_users: Dict, raw2inner_id_items: Dict):
+    n_users = len(raw2inner_id_users.keys())
+    n_items = len(raw2inner_id_items.keys())
+    actuals = np.zeros(shape=(n_users, n_items))
     for row in data.itertuples(index=False):
-        user = row[0]
-        item = row[1] - 1
+        raw_uid = row[0]
+        inner_uid = raw2inner_id_users[int(raw_uid)]
+        raw_iid = row[1]
+        try:
+            inner_iid = raw2inner_id_items[str(raw_iid)]
+        except:
+            print(f'Item: {raw_iid} not in training data.')
         rating = row[2]
-        if item < n_items:
-            inner_user_id = uid[user]
-            actuals[inner_user_id][item] = rating
 
-    return actuals, uid
+        actuals[inner_uid][inner_iid] = rating
+
+    return actuals
 
 
 if __name__ == '__main__':
@@ -44,24 +47,29 @@ if __name__ == '__main__':
         algo: surprise.SVD
         _, algo = dump.load(f'../svd_data/model{split}.model')
         item_profiles = algo.qi
-        n_items, _ = item_profiles.shape
         item_biases = algo.bi
         global_avg = algo.trainset.global_mean
-        actuals, uid = load_actuals(n_items, split)
-        n_testusers, _ = actuals.shape
 
-        predictions = np.zeros(shape=(n_testusers, n_items))
+        raw2inner_id_items = algo.trainset._raw2inner_id_items
+
+        data = pd.read_csv(f'../data/test{split}.csv', sep=',')
+        testusers = data['user'].unique()
+        raw2inner_id_users = dict(zip(testusers, range(len(testusers))))
+        actuals = load_actuals(data, raw2inner_id_users, raw2inner_id_items)
+        predictions = np.zeros_like(actuals)
         for user, val in profiles.items():
             profile = val['profile']
-            bias = val['bias']
-            inner_uid = uid[user]
+            try:
+                bias = val['bias']
+            except:
+                bias = val['avg_bias']
+            inner_uid = raw2inner_id_users[user]
             user_pred = global_avg + item_biases + bias + np.dot(item_profiles, profile)
             predictions[inner_uid] = user_pred
 
-        metrics.append(evaluation.evaluation_v2.Metrics2(predictions, actuals, k = 20).calculate())
+        metrics.append(evaluation.evaluation_v2.Metrics2(predictions, actuals, k = 10).calculate())
 
-    with open(f'../init_gen_data/results.pickle', 'wb') as f:
-        print('Saving metrics to pickle file...')
+    with open(f'../init_gen_data/results_at_100.pickle', 'wb') as f:
         pickle.dump(metrics, f)
 
     # total_prec = 0
