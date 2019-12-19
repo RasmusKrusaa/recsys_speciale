@@ -123,9 +123,9 @@ class Metrics2():
         n_rel_and_rec = sum((act >= avg_rating) for (_, act) in ratings[:k])
 
         # Fraction of recommended items that are relevant
-        precision = n_rel_and_rec / (min(k, n_rated))
+        precision = n_rel_and_rec / k
         # Fraction of relevant items that are recommended
-        recall = n_rel_and_rec / (min(k, n_rel))
+        recall = n_rel_and_rec / n_rel
 
         return precision, recall
 
@@ -152,7 +152,8 @@ class Metrics2():
 
         return 1 / (binary_relevance.index(1) + 1) if n_relevants != 0 else 0
 
-    def __hr(self, ratings: List[Tuple[float, int]], actuals: np.ndarray, k: int):
+    @staticmethod
+    def __hr(ratings: List[Tuple[float, int]], actuals: np.ndarray, k: int):
         """
         Computes the hit-rate of each
         :param k: number of items recommended
