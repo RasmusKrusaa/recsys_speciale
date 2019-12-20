@@ -8,6 +8,8 @@ from collections import defaultdict
 import surprise
 from typing import List
 
+from initial_profile_generation import tree
+
 
 def load_genre_avgs(filepath: str):
     with open(filepath, 'rb') as f:
@@ -70,7 +72,6 @@ class GenreComparison():
         C = defaultdict(list)
         # outcome for each user (computed with equation 4)
         for u in users:
-            inner_uid = u
             r_ui = self.R[u][genre1]
             r_uj = self.R[u][genre2]
 
@@ -100,10 +101,10 @@ class GenreComparison():
         best_pair_score = sys.maxsize
 
         for g1, g2 in pairs:
-            pair_score = 0
             # if items are the same don't consider them or already been asked
             if g1 == g2 or (g1, g2) in self.blacklisted_pairs or (g2, g1) in self.blacklisted_pairs:
                 continue
+            pair_score = 0
             # else continue with algorithm
             # compute possible outcomes on g1 and g2 for each user who answered the same so far
             C = self.find_pairwise_outcomes(users_who_answered_same, g1, g2)
@@ -192,3 +193,26 @@ class GenreComparison():
         return res
 
     # TODO: implement tree for genres and preselected items. Find inspiration in pairwise_comparison.py
+    def build_tree(self, users: List[int], depth: int = 0):
+        if depth >= self.n_questions or len(users) < 2:
+            return tree.Node(users, None)
+
+        question = self.select_next_pairwise(users)
+        if question is None:
+            print('Cant split users')
+            return tree.Node(users, None)
+
+        self.blacklisted_pairs.append(question)
+        q1, q2 = question
+
+        node = tree.Node(users, question)
+
+        outcomes = self.find_pairwise_outcomes(users, q1, q2)
+        for ratio, users_with_ratio in outcomes.items():
+            child = self.build_tree(users_with_ratio, depth + 1)
+            child.parent = node
+            child.ratio = ratio
+            node.add_child(child)
+
+        return node
+

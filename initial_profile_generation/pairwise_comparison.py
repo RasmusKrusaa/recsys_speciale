@@ -146,10 +146,10 @@ class ProfileGeneration():
         best_pair_score = sys.maxsize
 
         for c1, c2 in pairs:
-            pair_score = 0
             # if items are the same don't consider them
             if c1 == c2 or (c1, c2) in self.blacklisted_pairs or (c2, c1) in self.blacklisted_pairs:
                 continue
+            pair_score = 0
             # else continue with algorithm
             # compute possible outcomes on c1 and c2 for each user who answered the same so far
             C = self.find_pairwise_outcomes(users_who_answered_same, c1, c2)
@@ -314,10 +314,11 @@ class ProfileGeneration():
         return res
 
     def build_tree(self, users: List[int], depth: int = 0):
-        if depth >= self.n_questions or not users:
+        if depth >= self.n_questions or len(users) < 2:
             return tree.Node(users, None)
 
         clusters = self.select_next_pairwise(users)
+
         self.blacklisted_pairs.append(clusters)
         c1, c2 = clusters
 
@@ -333,10 +334,6 @@ class ProfileGeneration():
         node = tree.Node(users, question)
 
         outcomes = self.find_pairwise_outcomes(users, c1, c2)
-        # if only 1 outcome -> we can't split anymore
-        if len(outcomes) == 1:
-            return node
-
         for ratio, users_with_ratio in outcomes.items():
             child = self.build_tree(users_with_ratio, depth + 1)
             child.parent = node

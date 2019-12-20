@@ -10,23 +10,6 @@ from surprise import dump
 from evaluation import evaluation, evaluation_v2
 from keras import losses
 
-
-def load_actuals(filename, n_items: int):
-    data = pd.read_csv(f'data/{filename}.csv', sep=',')
-    real_user_ids = data['user'].unique()
-    inner_user_ids = list(range(len(real_user_ids)))
-    uid = dict(zip(real_user_ids, inner_user_ids))
-    actuals = np.zeros(shape=(len(inner_user_ids), n_items))
-    for row in data.itertuples(index=False):
-        user = row[0]
-        item = row[1] - 1
-        rating = row[2]
-        if item < n_items:
-            inner_user_id = uid[user]
-            actuals[inner_user_id][item] = rating
-
-    return actuals, uid
-
 metrics = []
 for split in range(1, 6):
     algo: surprise.prediction_algorithms.SVD
