@@ -8,17 +8,45 @@ from sklearn.cluster import KMeans
 
 
 def to_ndarray(data: pd.DataFrame):
-    n_users = data['user'].max()
-    n_items = data['item'].max()
+    """
+    :param data: pandas dataframe with user, item, rating as 3 first columns
+    :return: m x n numpy array with rating r in index u,i if u, i, r appeared in data. Otherwise 0. Also returns
+    dictionaries mapping raw ids of users and items to inner.
+    """
+    users = data['user'].unique()
+    items = data['item'].unique()
+    n_users = len(users)
+    n_items = len(items)
+    raw_to_inner_users = dict(zip(users, range(n_users)))
+    raw_to_inner_items = dict(zip(items, range(n_items)))
+
     result = np.zeros((n_users, n_items))
     for row in data.itertuples(index=False, name='row'):
-        user_id = row.user - 1
-        item_id = row.item - 1
+        inner_uid = raw_to_inner_users[row.user]
+        inner_iid = raw_to_inner_users[row.item]
         rating = row.rating
 
-        result[user_id, item_id] = rating
+        result[inner_uid, inner_iid] = rating
 
-    return result
+    return result, raw_to_inner_users, raw_to_inner_items
+
+
+def load_actuals(data: pd.DataFrame, raw2inner_id_users, raw2inner_id_items):
+    n_items = len(raw2inner_id_items)
+    n_users = len(raw2inner_id_users)
+    actuals = np.zeros(shape=(n_users, n_items))
+    for row in data.itertuples(index=False):
+        raw_uid = row[0]
+        raw_iid = row[1]
+        rating = row[2]
+        inner_uid = raw2inner_id_users[raw_uid]
+        inner_iid = raw2inner_id_items[raw_iid]
+        actuals[inner_uid][inner_iid] = rating
+
+    return actuals
+
+
+
 
 
 def cluster_items(xs: np.ndarray, k: int):

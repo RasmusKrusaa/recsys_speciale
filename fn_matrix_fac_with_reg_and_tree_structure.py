@@ -4,9 +4,14 @@ import sys
 import math
 from datetime import datetime
 from itertools import chain
-import evaluation_v2
+
+from surprise import dump
+
+import evaluation.evaluation_v2
 import pickle
 import os
+from utils import load_actuals
+
 
 class Node():
     def __init__(self, users, user_profile, item, parent, like, dislike, unknown):
@@ -17,27 +22,53 @@ class Node():
         self.like = like
         self.dislike = dislike
         self.unknown = unknown
-       # self.id = id
 
     def get_profile(self):
         return self.user_profile
 
+    def get_item(self):
+        return self.item
 
-def traverse_tree(user, current_node: Node):
-    if current_node.like is None:
+
+def traverse_tree(user, current_node: Node, actuals: np.ndarray):
+    if current_node.item is None:
         return current_node
 
-    if (user, current_node.item) in global_user_like:
-        return traverse_tree(user, current_node.like)
+    if compute_genre:
+        # genre_actuals is raw_user_id x genres (~755 x 18)
+        answer = round(genre_actuals[current_node.item].loc[user])
+    else:
+        # actuals is inner_user_id x raw item_id
+        answer = round(actuals[item_ids[item_ids[current_node.item]]].loc[user_ids[user]])
 
-    elif (user, current_node.item) in global_user_dislike:
-        return traverse_tree(user, current_node.dislike)
+    if answer >= 4:
+        if current_node.like is None:
+            return current_node
+        else:
+            return traverse_tree(user, current_node.like, actuals)
+
+    elif 1 <= answer <= 3:
+        if current_node.dislike is None:
+            return current_node
+        else:
+            return traverse_tree(user, current_node.dislike, actuals)
 
     else:
-        return traverse_tree(user, current_node.unknown)
+        if current_node.unknown is None:
+            return current_node
+        else:
+            return traverse_tree(user, current_node.unknown, actuals)
 
 
-def compute_minimum_objective(users: [int], node) -> (int, float):
+def compute_asked_questions(current_node: Node, output: []):
+    if current_node.parent == None:
+        return output
+
+    else:
+        return compute_asked_questions(current_node.parent, output + [current_node.parent.get_item()])
+
+
+def compute_minimum_objective(users: [int], node, observations, actuals, item_profiles) -> (int, float):
     """
     Equation 4 in the paper.
     :param users: Users.
@@ -47,20 +78,20 @@ def compute_minimum_objective(users: [int], node) -> (int, float):
     minimum_item = 0
     q = 1
 
-    for question in possible_questions:
-        print(f'computing item {q}/{len(possible_questions)} as question at {datetime.now().strftime("%H:%M:%S")}')
+    already_asked_questions = compute_asked_questions(node, [])
 
-        # determines whether item is liked, disliked or unknown by users.
-        l, d, u = partition_users(question, users)
+    for question in np.setdiff1d(possible_questions, already_asked_questions):
+        # Partition on whether item is liked, disliked or unknown by users.
+        l, d, u = partition_users(question, users, actuals)
+        if node.parent == None:
+            prev_profile = all_users_profile
+        else:
+            prev_profile = node.parent.get_profile()
+
         # Create user profiles for our partitions
-        upl = create_user_profile(l, node)
-        upd = create_user_profile(d, node)
-        upu = create_user_profile(u, node)
-
-        # The dimensions are reversed, so we have to transpose them.
-        user_like_profile = np.transpose(upl)
-        user_dislike_profile = np.transpose(upd)
-        user_unknown_profile = np.transpose(upu)
+        user_like_profile = compute_user_profile(l, observations, prev_profile, item_profiles).T
+        user_dislike_profile = compute_user_profile(d, observations, prev_profile, item_profiles).T
+        user_unknown_profile = compute_user_profile(u, observations, prev_profile, item_profiles).T
 
         # initialize objective of the three partitions
         l_objective = 0
@@ -70,18 +101,20 @@ def compute_minimum_objective(users: [int], node) -> (int, float):
         # iterate the user like partition
         like_obs = observations[observations.user.isin(l)]
         for row in like_obs.itertuples():
-            l_objective += (int(row.rating) - np.dot(user_like_profile, global_item_profiles[item_ids[row.item]]).flat[0]) **2
-
+            l_objective += (int(row.rating) - np.dot(user_like_profile, item_profiles[item_ids[row.item]])
+                                                                                                        .flat[0]) ** 2
 
         # iterate the user like partition
         dislike_obs = observations[observations.user.isin(d)]
         for row in dislike_obs.itertuples():
-            d_objective += (int(row.rating) - np.dot(user_dislike_profile, global_item_profiles[item_ids[row.item]]).flat[0]) **2
+            d_objective += (int(row.rating) - np.dot(user_dislike_profile, item_profiles[item_ids[row.item]])
+                                                                                                        .flat[0]) ** 2
 
         # iterate the user unknown partition
         unknown_obs = observations[observations.user.isin(u)]
         for row in unknown_obs.itertuples():
-            u_objective += (int(row.rating) - np.dot(user_unknown_profile, global_item_profiles[item_ids[row.item]]).flat[0]) **2
+            u_objective += (int(row.rating) - np.dot(user_unknown_profile, item_profiles[item_ids[row.item]])
+                                                                                                        .flat[0]) ** 2
 
         objective = l_objective + d_objective + u_objective
         if objective < minimum_objective:
@@ -93,7 +126,7 @@ def compute_minimum_objective(users: [int], node) -> (int, float):
     return (minimum_item, minimum_objective)
 
 
-def compute_item_profile(item: int, tree):
+def compute_item_profile(item: int, tree, observations):
     """
     This is equation 2 in the paper.
     :param item: The item to which you wish to create a profile.
@@ -102,109 +135,127 @@ def compute_item_profile(item: int, tree):
     part1 = np.zeros(shape=(100, 100))
     part2 = np.zeros(shape=(1, 100))
 
-    obs = observations[observations.item == item+1]
-    for row in obs.itertuples():
-        user = user_ids[row.user]
-        ti = traverse_tree(int(user), tree).get_profile()
-        part1 += np.dot(np.reshape(ti, (-1, 1)), np.reshape(ti, (-1, 1)).T)  # user profile of each user times it self transposed.
-        part2 += int(row.rating) * ti  # rating of item times user profile
+    obs = observations[observations.item == item]
 
-    part2 = np.transpose(part2)
-    result = np.dot(np.dot(np.linalg.inv(part1 + np.identity(100)), lambda_h), part2)
+    for row in obs.itertuples():
+        ta_i = user_profiles[user_ids[row.user]]  # t_ai = t(a_i) in the paper
+        part1 += np.dot(np.reshape(ta_i, (-1, 1)),
+                        np.reshape(ta_i, (-1, 1)).T) + np.dot(np.identity(100), lambda_h)  # user profile of each user times it self transposed.
+        part2 += int(row.rating) * np.reshape(ta_i, (1, -1))  # rating of item times user profile
+
+    result = np.dot(np.linalg.inv(part1), part2.T)
 
     return result.T
 
 
-def create_user_profile(users: [int], node: Node) -> np.ndarray:
+def compute_user_profile(users: [int], observations, prev_user_profile, item_profiles) -> np.ndarray:
     """
     Equation 5, 6 and 7 in the paper.
+
     :param users: A partition of user ids.
+    :param observations: the observed ratings
+    :param prev_user_profile: the user profile of the previous node, used for regularization.
+    :param item_profiles: the latent item space.
     :returns: Returns the optimal profile for the partition.
     """
     part1 = np.zeros(shape=(100, 100))
     part2 = np.zeros(shape=(1, 100))
 
+#    item_ids, user_ids = build_item_and_user_id_map(observations)
+
     obs = observations[observations.user.isin(users)]
     for row in obs.itertuples():
-        item = item_ids[row.item]
-        item_profile = global_item_profiles[item]
-        part1 += np.dot(np.reshape(item_profile, (-1, 1)), np.reshape(item_profile, (-1, 1)).T)# + np.dot(np.identity(item_profile.size), lambda_h)
+        item_profile = item_profiles[item_ids[row.item]]
+        part1 += np.dot(np.reshape(item_profile, (-1, 1)), np.reshape(item_profile, (-1, 1)).T) \
+            + np.dot(np.identity(100), lambda_h)
+        # + np.dot(np.identity(item_profile.size), lambda_h)
 
-        part2 += (int(row.rating) * item_profile)
+        part2 += (int(row.rating) * np.reshape(item_profile, (1, -1)))
 
-    if node.parent == None:  # check if we are at root
-        previous_profile = np.zeros((1, 100))
+    if prev_user_profile is np.ndarray:  # make sure we are not in root
+        return np.dot(np.linalg.inv(part1),
+                      part2.T + (lambda_h * prev_user_profile.T))
     else:
-        previous_profile = node.parent.user_profile
-
-    part2 = np.transpose(part2)
-    user_profile = np.dot(np.linalg.inv(part1 + np.dot(np.identity(100), lambda_h)), part2 + (lambda_h * previous_profile.T))
-
-    return user_profile
+        return np.dot(np.linalg.inv(part1 + np.dot(np.identity(100), lambda_h)), part2.T)
 
 
-def greedy_tree_construction(a_node, depth: int = 0, max_depth: int = 5):
+def greedy_tree_construction(users, user_profile, parent, observations, item_profiles, actuals, depth: int = 0,
+                             max_depth: int = 17):
     """
-    Algorithm 2 in the paper.
+    Algorithm 2 in the paper. Recursively builds a greedy tree.
+
     :param users: A partition of user ids.
-    :param current_profile: The optimal user profile of previous node (0 at root).
-    :param depth: The current depth of the tree.
+    :param user_profile: The optimal user profile of previous node.
+    :param parent: The parent node that we wish to compute a split on.
+    :param observations: the observations of ratings.
+    :param item_profiles: The current item profiles, initialized to be random.
+    :param actuals: a pivot of observations also containg all the zeroes (Not given ratings).
+    :param depth: The current depth of the tree. Depth is equal to the amount of questions you ask.
     :param max_depth: The maximum depth of the tree.
-    :return: Returns nothing, but updates global_item_profiles, global_user_profiles, and user_path_map.
+    :return: returns a tree.
     """
-
-    if depth != 0:  # setting the parent
-        current_node = Node(a_node.users, a_node.user_profile, None, a_node, None, None, None   )
+    # users, user_profile, item, parent, like, dislike, unknown
+    if depth == 0:  # setting the parent
+        this_node = Node(users, user_profile, None, None, None, None, None)
+    elif len(users) == 1:
+        return Node(users, user_profile, None, parent, None, None, None)
     else:
-        current_node = a_node
+        this_node = Node(users, user_profile, None, parent, None, None, None)
 
     print(f'---- Depth: {depth} Iteration: {i} training set: {k} at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}----')
-    best_question = compute_minimum_objective(
-        current_node.users, current_node)  # computes the minimum objective of all possible questions
-    current_node.item = best_question[0]
 
-    # user_path_map.loc[len(user_path_map)] = [path, best_question[0], current_profile]  # update the map the keeps track of the tree
+    # computes the minimum objective of all possible questions
+    best_question = compute_minimum_objective(users, this_node, observations, actuals, item_profiles)
+    this_node.item = best_question[0]
 
-    like, dislike, unknown = partition_users(best_question[0],
-                                             current_node.users)  # partition the users for the chosen item (again)
+    # partition the users for the chosen item (again)
+    like, dislike, unknown = partition_users(best_question[0], users, actuals)
 
     print(f'computing user profiles {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-    like_optimal_user_profile = np.transpose(create_user_profile(like, current_node))
-    dislike_optimal_user_profile = np.transpose(create_user_profile(dislike, current_node))
-    unknown_optimal_user_profile = np.transpose(create_user_profile(unknown, current_node))
+    like_optimal_user_profile = compute_user_profile(like, observations, user_profile, item_profiles).T
+    dislike_optimal_user_profile = compute_user_profile(dislike, observations, user_profile, item_profiles).T
+    unknown_optimal_user_profile = compute_user_profile(unknown, observations, user_profile, item_profiles).T
 
     if depth < max_depth:
-        current_node.like = greedy_tree_construction(
-            Node(like, like_optimal_user_profile, None, current_node, None, None, None), depth + 1)
-        current_node.dislike = greedy_tree_construction(
-            Node(dislike, dislike_optimal_user_profile, None, current_node, None, None, None), depth + 1)
-        current_node.unknown = greedy_tree_construction(
-            Node(unknown, unknown_optimal_user_profile, None, current_node, None, None, None), depth + 1)
+        if like:
+            this_node.like = greedy_tree_construction(like, like_optimal_user_profile,
+                                                      this_node, observations, item_profiles, actuals, depth + 1)
 
-    return current_node
+        if dislike:
+            this_node.dislike = greedy_tree_construction(dislike, dislike_optimal_user_profile,
+                                                         this_node, observations, item_profiles, actuals, depth + 1)
+
+        if unknown:
+            this_node.unknown = greedy_tree_construction(unknown, unknown_optimal_user_profile,
+                                                         this_node, observations, item_profiles, actuals, depth + 1)
+
+    return this_node
 
 
-def partition_users(item: int, users: [int]) -> ([int], [int], [int]):  # the output typing might not be totally correct
+def partition_users(item: int, users: [int], actuals) -> ([int], [int], [int]):
     """
     This methods split all users in three partitions based on a specific item (aka a question)
     :param item: The id of the item you want to distinguish by.
     :param users: The list users you want to distinguish, can contain duplicates.
+    :param: actuals: The actual ratings made by all users.
     :returns: Returns 3 lists, one for like, one for dislike and one for unknown.
     """
     l = []  # like
     d = []  # dislike
     u = []  # unknown
 
-    # like_tuples = [i for i in like if i[1] == item]
-    # dislike_tuples = [i for i in like if i[1] == item]
+    for user in users:
+        if compute_genre:
+            # genre_actuals is raw_user_id x genres (~755 x 18)
+            answer = round(genre_actuals[item].loc[user])
+        else:
+            # actuals is inner_user_id x raw item_id
+            answer = round(actuals[item].loc[user_ids[user]])
 
-    for user in users:  # TODO unique here?
-        if (user, item) in global_user_like:
+        if answer >= 4:
             l.append(user)
-
-        elif (user, item) in global_user_dislike:
+        elif 1 <= answer <= 3:
             d.append(user)
-
         else:
             u.append(user)
 
@@ -224,15 +275,15 @@ def print_tree(tree):
         print_tree(tree.unknown)
 
 
-def pickle_tree(tree, tree_name: str, path=r'data\\'):
-    if os.path.exists(path+tree_name+'.pkl'):
-        os.remove(path+tree_name+'.pkl')
-    afile = open(path+tree_name+'.pkl', 'wb')
+def pickle_tree(tree, tree_name: str, path=r'fn_data\\'):
+    if os.path.exists(path + tree_name + '_improved.pkl'):
+        os.remove(path + tree_name + '_improved.pkl')
+    afile = open(path + tree_name + '_improved.pkl', 'wb')
     pickle.dump(tree, afile)
     afile.close()
 
 
-def load_tree(tree_name, path=r'data\\'):
+def load_tree(tree_name, path=r'fn_data\\'):
     if os.path.exists(path + tree_name + '.pkl'):
         file2 = open(path + tree_name + '.pkl', 'rb')
         tree = pickle.load(file2)
@@ -242,131 +293,138 @@ def load_tree(tree_name, path=r'data\\'):
         print(f'tree not found at {path}')
 
 
-def train():
-    for k in range(1, 6):
-        observations = pd.read_csv('data/train' + str(k) + '.csv', sep=',')
-        possible_questions = observations['item'].value_counts().head(100)
-        sixty = observations[observations.item == 51]
+def build_item_and_user_id_map(observations):
+    unique_item_ids = observations.item.unique()
+    item_ids = dict(zip(unique_item_ids, range(unique_item_ids.size)))
+    unique_user_ids = observations.user.unique()
+    user_ids = dict(zip(unique_user_ids, range(unique_user_ids.size)))
 
-        unique_item_ids = observations.item.unique()
-        item_ids = dict(zip(unique_item_ids, range(unique_item_ids.size)))
-        unique_user_ids = observations.user.unique()
-        user_ids = dict(zip(unique_user_ids, range(unique_user_ids.size)))
-
-
-        new_item_profiles = np.zeros((unique_item_ids.size, 100))  # temporary profile holder to check for convergence
-        amount_of_users = observations.user.unique().size
-
-        root = Node(range(1, amount_of_users), np.zeros((1, 100)), None, None, None, None, None)
-
-        lambda_h = 0.03  # regularization parameter value estimated in the paper.
-
-        Ul = observations.copy()
-        Ul = Ul.loc[Ul['rating'].isin(['4', '5'])]
-        Ul = Ul[['user', 'item']]
-        global_user_like = [(u, i)
-                            for (u, i) in zip(Ul.user, Ul.item)]
-
-        Ud = observations.copy()
-        Ud = Ud.loc[Ud['rating'].isin(['1', '2', '3'])]
-        Ud = Ud[['user', 'item']]
-        global_user_dislike = [(u, i)
-                               for (u, i) in zip(Ud.user, Ud.item)]
-
-        i = 1
-        while i != 11:
-            greedy_tree = greedy_tree_construction(root)
-            for item in range(0, unique_item_ids.size):
-                new_item_profiles[item] = compute_item_profile(item, greedy_tree)[0]
-
-            if False not in np.isclose(global_item_profiles, new_item_profiles):
-                print('------------------------')
-                print(f'convergence took {i} iterations!')
-                print('------------------------')
-                break
-            else:
-                global_item_profiles = new_item_profiles
-
-            i += 1
-
-        np.savetxt(r'data\fn_item_profiles' + str(k) + '.csv', global_item_profiles)
-        pickle_tree(greedy_tree, str(k))
-
-    test = pd.read_csv('data/new_users_data.csv', sep=',')
-    R = test.pivot(index='user', columns='item', values='rating')
-
-    amount_of_new_users = test.user.unique().size
-
-    test_user_profiles = np.random.rand(amount_of_new_users, 100)
-
-
-def test():
-    for k in range(1, 6):
-        # load item profiles
-        item_profiles = pd.read_csv(f'data/fn_item_profiles{k}.csv', delimiter=' ', header=None)
-
-        observations = pd.read_csv('data/test'+str(k)+'.csv', sep=',')
-        test_observations = observations[observations.isin(item_profiles.index)]
-
-        tree = load_tree(str(k))
-
-        unique_item_ids = test_observations.item.unique()
-        item_ids = dict(zip(range(unique_item_ids.size), unique_item_ids))
-        unique_user_ids = test_observations.user.unique()
-        user_ids = dict(zip(unique_user_ids, range(unique_user_ids.size)))
-
-        user_profiles = np.zeros((unique_user_ids.size, 100))
-
-        # collect user profiles from tree
-
-        for user in unique_user_ids:
-            user_profiles[user_ids[user]] = traverse_tree(user, tree).get_profile()
-
-        # change index
-        #current_index = item_profiles.index
-        #new_index = [item_ids[index] for index in current_index]
-
-        #item_profiles.reindex(new_index)
-        # removing item profiles for not observed items
-
-
-        # lappe løsning
-        reconstructed_ratings = pd.DataFrame(np.dot(user_profiles, item_profiles.T))
-        l = unique_item_ids.tolist()
-        reconstructed_ratings = reconstructed_ratings[l].to_numpy()
-        #reconstructed_ratings = reconstructed_ratings[unique_item_ids.tolist()]
-        #reconstructed_ratings = reconstructed_ratings.T
-
-        obs = test_observations[['user','item','rating']]
-        actual_ratings = pd.DataFrame.pivot_table(obs, index='user', columns=['item'], values='rating').fillna(value=0).to_numpy()
-
-        metrics10 = evaluation_v2.Metrics2(reconstructed_ratings, actual_ratings, k=10)
-        print(metrics10.calculate())
+    return item_ids, user_ids
 
 
 if __name__ == "__main__":
+    compute_genre = True
+    train = True
+    test = False
+
     lambda_h = 0.03
-    i = 1
+
     k = 1
-    item_ids = 0
-    user_ids = 0
-    possible_questions = []
-    test_observations = pd.read_csv('data/test' + str(k) + '.csv', sep=',')
-    unique_item_ids = test_observations.item.unique()
-    global_item_profiles = np.random.rand(unique_item_ids.size, 100)  # initialize random item profiles
+    for k in range(1, 6):
+        previous_rmse = sys.maxsize
+        if train:
+            training_observations = pd.read_csv('data/train' + str(k) + '.csv', sep=',').head(20000)
+            unique_users = training_observations.user.unique()
+            unique_items = training_observations.item.unique()
 
-    # build like and dislike repos
-    Ul = test_observations.copy()
-    Ul = Ul.loc[Ul['rating'].isin(['4', '5'])]
-    Ul = Ul[['user', 'item']]
-    global_user_like = [(u, i)
-                        for (u, i) in zip(Ul.user, Ul.item)]
+            item_profiles = np.random.rand(unique_items.size, 100)  # initialize random item profiles
+            user_profiles = np.zeros((unique_users.size, 100))
 
-    Ud = test_observations.copy()
-    Ud = Ud.loc[Ud['rating'].isin(['1', '2', '3'])]
-    Ud = Ud[['user', 'item']]
-    global_user_dislike = [(u, i)
-                           for (u, i) in zip(Ud.user, Ud.item)]
+            greedy_tree = 0  # placeholder value so pickle tree doesnt complain
 
+            if compute_genre:
+                print('---COMPUTING GENRES!---')
+                genre_actuals = pd.read_csv(f'data/train{k}_genre_avgs.csv', sep=',')
+                genre_actuals.index = genre_actuals.user
+                genre_actuals = genre_actuals.drop('user', axis=1)
+                possible_questions = genre_actuals.columns.tolist()
+            else:
+                possible_questions = training_observations['item'].value_counts().head(100)
 
-    test()
+            item_ids, user_ids = build_item_and_user_id_map(training_observations)
+
+            actuals = load_actuals(training_observations, user_ids, item_ids)
+
+            all_users_profile = compute_user_profile(unique_users.tolist(), training_observations, None, item_profiles)
+
+            i = 1
+            rmse_list = []
+            while i != 26 :
+                print(f'Iteration {i} begun at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+                # step 1. Build the tree.
+                greedy_tree = greedy_tree_construction(unique_users.tolist(), all_users_profile, None,
+                                                       training_observations, item_profiles, actuals)
+                #pickle_tree(greedy_tree, f'genre_tree{k}')
+
+                #tree = load_tree(f'genre_tree{str(k)}_improved')
+
+                # step 1.5. Update the user profiles table.
+                for user in unique_users:
+                    user_profiles[user_ids[user]] = traverse_tree(user, greedy_tree, actuals).get_profile()
+
+                # step 2. Compute new item profiles.
+                for item in unique_items:
+                    item_profiles[item_ids[item]] = compute_item_profile(item, greedy_tree, training_observations)
+
+                actuals_filtered = pd.DataFrame(actuals).loc[unique_users].to_numpy()
+                predictions = np.dot(user_profiles, item_profiles.T)
+
+                metrics10 = evaluation.evaluation_v2.Metrics2(predictions, actuals, k=10, metrics='rmse')
+
+                _, algo = dump.load('svd_data/model1.model')
+
+                up = algo.pu
+                ip = algo.qi
+
+                bu = algo.bu
+                bi = algo.bi
+                ba = algo.trainset.global_mean
+
+                raw2inner_id_items = algo._raw2inner_id_items
+                raw2inner_id_users = algo._raw2inner_id_users
+
+                preddd = np.zeros_like(actuals)
+
+                for u in unique_users:
+                    uidinnerinner = raw2inner_id_users[u]
+                    preddd[uidinnerinner] = np.dot(ip, up[uidinnerinner]) + bu[uidinnerinner] + bi + ba
+#                    uids += algo.trainset.to_inner_uid(str(user))
+
+                rmse_svd = metrics10.calculate()
+
+                rmse = metrics10.calculate()
+                rmse_list.append(rmse)
+
+                if previous_rmse - rmse < 0.001:
+                    print('---------------------------------')
+                    print(f'convergence took {i} iterations!')
+                    print('---------------------------------')
+                    break
+                else:
+                    previous_rmse = rmse
+
+                i += 1
+                if i == 26:
+                    print('STOPPING!')
+                    print('convergence has not been reached in 10 iterations!')
+
+            with open(f'fn_data/rmse_train{k}.txt', 'w') as f:
+                for item in rmse_list:
+                    f.write("%s\n" % item)
+
+            np.savetxt(f'fn_data/fn_genre_item_profiles{k}.csv', item_profiles, delimiter=',')
+            pickle_tree(greedy_tree, f'genre_tree{k}')
+
+        if test:
+            item_profiles = pd.read_csv(f'fn_data/fn_item_profiles{k}.csv', delimiter=' ', header=None)
+            tree = load_tree(str(k))
+
+            test_observations = pd.read_csv('data/test' + str(k) + '.csv', sep=',')
+            #test_observations = test_observations[test_observations.isin(item_profiles.index)]
+
+            actuals, uid = load_actuals(test_observations.item.unique().size, f'data/test{k}.csv')
+
+            item_ids, user_ids = build_item_and_user_id_map(test_observations)
+
+            item_profiles = item_profiles.truncate(after=1362)
+
+            user_profiles = np.zeros((test_observations.user.unique().size, 100))
+
+            for user in test_observations.user.unique():
+                user_profiles[user_ids[user]] = traverse_tree(user_ids[user], tree, actuals).get_profile()
+
+            item_profiles = item_profiles.to_numpy()
+            reconstructed_ratings = np.dot(user_profiles, item_profiles.T)
+
+            metrics10 = evaluation.evaluation_v2.Metrics2(reconstructed_ratings, actuals, k=10)
+            print(metrics10.calculate())
