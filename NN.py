@@ -1,3 +1,5 @@
+import pickle
+
 import surprise
 import tensorflow as tf
 from tensorflow import keras
@@ -5,61 +7,107 @@ import numpy as np
 import pandas as pd
 from surprise import dump
 #import matplotlib.pyplot as plt
-from evaluation import evaluation
+from evaluation import evaluation, evaluation_v2
+from keras import losses
 
-algo: surprise.prediction_algorithms.SVD
-_, algo = dump.load('svd_data/model1.model')
-item_profiles = algo.qi
-user_profiles = algo.pu
-global_avg = algo.trainset.global_mean
-item_biases = algo.bi
-# With no other solution as of now, I'm averaging known user biases
-tmp_user_bias = np.mean(algo.bu)
+metrics = []
+for split in range(1, 6):
+    algo: surprise.prediction_algorithms.SVD
+    _, algo = dump.load(f'svd_data/model{split}.model')
+    item_profiles = algo.qi
+    n_items, _ = item_profiles.shape
+    user_profiles = algo.pu
+    global_avg = algo.trainset.global_mean
+    item_biases = algo.bi
+    # With no other solution as of now, I'm averaging known user biases
+    tmp_user_bias = np.mean(algo.bu)
 
-def load_actuals(n_items: int):
-    data = pd.read_csv('data/new_users_data.csv', sep=',')
-    real_user_ids = data['user'].unique()
-    inner_user_ids = list(range(len(real_user_ids)))
-    uid = dict(zip(real_user_ids, inner_user_ids))
-    actuals = np.zeros(shape=(len(inner_user_ids), n_items))
-    for row in data.itertuples(index=False):
-        user = row[0]
-        item = row[1] - 1
-        rating = row[2]
-        if item < n_items:
-            inner_user_id = uid[user]
-            actuals[inner_user_id][item] = rating
+    model = keras.Sequential([
+        keras.layers.Dense(18, activation='relu', input_shape=(18,), use_bias=True),
+        keras.layers.Dense(64, activation='relu'),
+        keras.layers.Dense(100)])
 
-    return actuals, uid
+    model.compile(optimizer="adam", loss=losses.mean_squared_error, metrics=["mae"])
 
-model = keras.Sequential([
-    keras.layers.Dense(18, activation=tf.nn.relu, input_shape=(18,)),
-    keras.layers.Dense(64, activation=tf.nn.relu),
-    keras.layers.Dense(100)])
+    # handling item inputs
+    # loading most popular item answers
+    with open('data/mp_item_answers.pickle', 'rb') as f:
+        item_answers = pickle.load(f)
+    users = [u for u in item_answers.keys()]
+    train_users = [int(algo.trainset.to_raw_uid(inner_uid)) for inner_uid in algo.trainset.ur.keys()]
+    inner_train_users = [algo.trainset.to_inner_uid(str(id)) for id in train_users]
+    test_users = [u for u in users if u not in train_users]
+    xs = np.array([item_answers[raw_uid]for raw_uid in train_users])
+    ys = np.array([user_profiles[inner_uid] for inner_uid in inner_train_users])
 
-model.compile("adam", loss="mse", metrics=["mae"])
+    new_xs = np.array([item_answers[raw_uid] for raw_uid in test_users])
+    n_test_users, _ = new_xs.shape
 
-data = pd.read_csv(r'data/train1_genre_avgs.csv', sep=',')
-data = data.drop(data.columns[0], axis=1)
-xs = np.array(data)
-ys = user_profiles
+    # handling genre inputs
+    # data = pd.read_csv(f'data/train{split}_genre_avgs.csv', sep=',')
+    # data = data.drop(data.columns[0], axis=1)
+    # xs = np.array(data)
+    # ys = user_profiles
+    # cold_users_data = pd.read_csv(f'data/test{split}_genre_avgs.csv', sep=',')
+    # cold_users = cold_users_data['user'].tolist()
+    # n_users = len(cold_users)
+    # cold_users_data = cold_users_data.drop(cold_users_data.columns[0], axis=1)
+    # test_xs = np.array(cold_users_data)
 
-model.fit(xs, ys, epochs=10)
+    model.fit(xs, ys, epochs=10)
 
-cold_users_data = pd.read_csv('data/test1_genre_avgs.csv', sep=',')
-cold_users = cold_users_data['user'].tolist()
-cold_users_data = cold_users_data.drop(cold_users_data.columns[0], axis=1)
-test_xs = np.array(cold_users_data)
+    # profiles on genres
+    # cold_users_profiles = np.array(model.predict(new_xs))
 
-cold_users_profiles = np.array(model.predict(test_xs))
+    # profiles on items
+    cold_users_profiles = np.array(model.predict(new_xs))
 
-predictions = {}
-for user, profile in zip(cold_users, cold_users_profiles):
-    # TODO: what to do with user bias?
-    predictions[user] = global_avg + item_biases + tmp_user_bias + np.dot(item_profiles, profile)
+    actuals, uid = load_actuals(f'test{split}', n_items)
+    predictions = np.zeros(shape=(n_test_users, n_items))
+    total_min = 0
+    total_max = 0
+    for user, profile in zip(test_users, cold_users_profiles):
+        # TODO: what to do with user bias?
+        inner_uid = uid[user]
+        if profile.min() < total_min:
+            total_min = profile.min()
+        if profile.max() > total_max:
+            total_max = profile.max()
+        predictions[inner_uid] = global_avg + item_biases + tmp_user_bias + np.dot(item_profiles, profile)
 
-# TODO: compute metrics
-print('Done')
+    print(f'Max: {total_max}, min: {total_min}')
+    metrics.append(evaluation_v2.Metrics2(predictions, actuals, k=10).calculate())
+
+with open('our_approach/items_results_at_10.pickle', 'wb') as f:
+    pickle.dump(metrics, f)
+
+prec = 0
+recall = 0
+mrr = 0
+ndcg = 0
+rmse = 0
+mae = 0
+hr = 0
+for m in metrics:
+    prec += m['precision']
+    recall += m['recall']
+    ndcg += m['ndcg']
+    mrr += m['mrr']
+    rmse += m['rmse']
+    mae += m['mae']
+    hr += m['hr']
+
+avg_metrics = {'precision': prec/5,
+               'recall': recall/5 ,
+               'ndcg': ndcg/5,
+               'mrr': mrr/5,
+               'rmse': rmse/5,
+               'mae': mae/5,
+               'hr': hr/5}
+
+print(avg_metrics)
+with open('our_approach/items_avg_results_at_10.pickle', 'wb') as f:
+    pickle.dump(avg_metrics, f)
 
 # predicted_variables = np.dot(predictions, pd.read_csv('data/item_profiles.csv', sep=',', header=None))
 # predicted_variables = pd.DataFrame(data=predicted_variables, index=users)

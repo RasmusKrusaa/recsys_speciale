@@ -1,0 +1,17 @@
+genre_nn_loss1-5 type: [(loss, epoch)]
+    NN trained with train1-5 users' genre answers and profiles
+genre_rmse_test1-5 type: [(rmse, epoch)]
+    computing profiles during training of NN for users in test1-5 - NN trained with
+    train1-5 users' genre answers and their known profiles
+
+    RMSE on predictions ((profile provided by NN *item profiles) + biases + global average)
+    for test1-5 users.
+genre_results_at_10_1-5 type: {metric: value}
+    NN trained with genre answers and known profiles
+    Computing profiles after training of NN for test users and with those measure metrics
+
+
+Same as above for everything else:
+random90: answers on items in the 90% of long tail
+random98: answers on items in the 98% of long tail
+mp: answers on most popular items (measured by number of times rated)
