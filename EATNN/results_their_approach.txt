@@ -1,0 +1,260 @@
+Epoch: 0
+	Updating: time=34.76
+Recall@10: 0.014982688311379118. NDCG@10: 0.010327791296486073
+Epoch: 1
+	Updating: time=34.46
+Epoch: 2
+	Updating: time=34.64
+Epoch: 3
+	Updating: time=35.29
+Epoch: 4
+	Updating: time=34.79
+Epoch: 5
+	Updating: time=35.40
+Recall@10: 0.055630720254675685. NDCG@10: 0.03951077271747808
+Epoch: 6
+	Updating: time=34.80
+Epoch: 7
+	Updating: time=34.81
+Epoch: 8
+	Updating: time=34.58
+Epoch: 9
+	Updating: time=35.75
+Epoch: 10
+	Updating: time=35.44
+Recall@10: 0.05941191275453114. NDCG@10: 0.04176447112229534
+Epoch: 11
+	Updating: time=35.19
+Epoch: 12
+	Updating: time=35.56
+Epoch: 13
+	Updating: time=36.65
+Epoch: 14
+	Updating: time=37.00
+Epoch: 15
+	Updating: time=36.89
+Recall@10: 0.06084777958037011. NDCG@10: 0.04348453314643916
+Epoch: 16
+	Updating: time=37.60
+Epoch: 17
+	Updating: time=36.33
+Epoch: 18
+	Updating: time=36.38
+Epoch: 19
+	Updating: time=36.50
+Epoch: 20
+	Updating: time=36.33
+Recall@10: 0.06328221453569642. NDCG@10: 0.0456667113945678
+Epoch: 21
+	Updating: time=36.06
+Epoch: 22
+	Updating: time=36.45
+Epoch: 23
+	Updating: time=36.47
+Epoch: 24
+	Updating: time=36.41
+Epoch: 25
+	Updating: time=36.36
+Recall@10: 0.06592241710626112. NDCG@10: 0.048134757272717654
+Epoch: 26
+	Updating: time=36.75
+Epoch: 27
+	Updating: time=36.60
+Epoch: 28
+	Updating: time=36.50
+Epoch: 29
+	Updating: time=36.64
+Epoch: 30
+	Updating: time=36.36
+Recall@10: 0.06551419796545145. NDCG@10: 0.04776598759417543
+Epoch: 31
+	Updating: time=36.26
+Epoch: 32
+	Updating: time=36.36
+Epoch: 33
+	Updating: time=36.26
+Epoch: 34
+	Updating: time=36.88
+Epoch: 35
+	Updating: time=37.74
+Recall@10: 0.06939580846266082. NDCG@10: 0.04955329588852942
+Epoch: 36
+	Updating: time=36.32
+Epoch: 37
+	Updating: time=36.40
+Epoch: 38
+	Updating: time=36.51
+Epoch: 39
+	Updating: time=36.33
+Epoch: 40
+	Updating: time=36.49
+Recall@10: 0.06936902466150376. NDCG@10: 0.049909284462550434
+Epoch: 41
+	Updating: time=36.40
+Epoch: 42
+	Updating: time=36.39
+Epoch: 43
+	Updating: time=36.72
+Epoch: 44
+	Updating: time=36.34
+Epoch: 45
+	Updating: time=36.47
+Recall@10: 0.07037073882477783. NDCG@10: 0.0509769064919501
+Epoch: 46
+	Updating: time=36.26
+Epoch: 47
+	Updating: time=36.29
+Epoch: 48
+	Updating: time=36.38
+Epoch: 49
+	Updating: time=36.55
+Epoch: 50
+	Updating: time=36.54
+Recall@10: 0.07100343172766571. NDCG@10: 0.050885723138179156
+Epoch: 51
+	Updating: time=36.86
+Recall@10: 0.07086704691161516. NDCG@10: 0.05106526528229966
+Epoch: 52
+	Updating: time=37.19
+Recall@10: 0.06949214511888607. NDCG@10: 0.050733084708732765
+Epoch: 53
+	Updating: time=36.35
+Recall@10: 0.07081560500780555. NDCG@10: 0.05123373841068732
+Epoch: 54
+	Updating: time=36.51
+Recall@10: 0.07094535764452199. NDCG@10: 0.051017056749380556
+Epoch: 55
+	Updating: time=36.29
+Recall@10: 0.07082742389149074. NDCG@10: 0.051263790050725545
+Epoch: 56
+	Updating: time=36.36
+Recall@10: 0.07213651405851963. NDCG@10: 0.051830756823878735
+Epoch: 57
+	Updating: time=36.70
+Recall@10: 0.07308772162532609. NDCG@10: 0.051735076237760184
+Epoch: 58
+	Updating: time=36.39
+Recall@10: 0.07314469034524745. NDCG@10: 0.05230703511705494
+Epoch: 59
+	Updating: time=36.35
+Recall@10: 0.07297148843109845. NDCG@10: 0.05183440826717378
+Epoch: 60
+	Updating: time=36.33
+Recall@10: 0.07173399178970209. NDCG@10: 0.051172773319539296
+Epoch: 61
+	Updating: time=36.47
+Recall@10: 0.07228777876410189. NDCG@10: 0.05155933365601535
+Epoch: 62
+	Updating: time=36.24
+Recall@10: 0.0709642338472422. NDCG@10: 0.05085802395839916
+Epoch: 63
+	Updating: time=36.52
+Recall@10: 0.07191442107876649. NDCG@10: 0.05145475209087021
+Epoch: 64
+	Updating: time=36.42
+Recall@10: 0.07194205515932535. NDCG@10: 0.0511892401232998
+Epoch: 65
+	Updating: time=37.04
+Recall@10: 0.07234610793106615. NDCG@10: 0.051451109781300054
+Epoch: 66
+	Updating: time=36.94
+Recall@10: 0.07242739464187932. NDCG@10: 0.05109829442900201
+Epoch: 67
+	Updating: time=36.54
+Recall@10: 0.07206611092404965. NDCG@10: 0.050751071354170736
+Epoch: 68
+	Updating: time=36.31
+Recall@10: 0.07221635529434972. NDCG@10: 0.05153420741477268
+Epoch: 69
+	Updating: time=36.36
+Recall@10: 0.07289521836875598. NDCG@10: 0.0517885329014285
+Epoch: 70
+	Updating: time=36.47
+Recall@10: 0.07358802602535193. NDCG@10: 0.05217256956385695
+Epoch: 71
+	Updating: time=36.53
+Recall@10: 0.07283442339152646. NDCG@10: 0.052116930118228544
+Epoch: 72
+	Updating: time=36.46
+Recall@10: 0.07351388166151396. NDCG@10: 0.0522409905722414
+Epoch: 73
+	Updating: time=36.43
+Recall@10: 0.07379124280238486. NDCG@10: 0.0525782105367809
+Epoch: 74
+	Updating: time=36.38
+Recall@10: 0.07420932518425555. NDCG@10: 0.05236241730721733
+Epoch: 75
+	Updating: time=36.34
+Recall@10: 0.07382542403433769. NDCG@10: 0.05261607586555667
+Epoch: 76
+	Updating: time=36.41
+Recall@10: 0.07350520881161549. NDCG@10: 0.05314873871257486
+Epoch: 77
+	Updating: time=36.39
+Recall@10: 0.07349330489999013. NDCG@10: 0.05241965680131514
+Epoch: 78
+	Updating: time=36.53
+Recall@10: 0.07224279898374605. NDCG@10: 0.05206616613998201
+Epoch: 79
+	Updating: time=36.42
+Recall@10: 0.07278383176711867. NDCG@10: 0.05239260613563026
+Epoch: 80
+	Updating: time=37.67
+Recall@10: 0.07222196713840168. NDCG@10: 0.05165374026904154
+Epoch: 81
+	Updating: time=37.44
+Recall@10: 0.07212282456015046. NDCG@10: 0.051989933626225386
+Epoch: 82
+	Updating: time=36.53
+Recall@10: 0.0721641481390785. NDCG@10: 0.05188374562525032
+Epoch: 83
+	Updating: time=36.52
+Recall@10: 0.07283493355916755. NDCG@10: 0.052690676171034484
+Epoch: 84
+	Updating: time=36.41
+Recall@10: 0.0712216984501107. NDCG@10: 0.05194771096566828
+Epoch: 85
+	Updating: time=36.30
+Recall@10: 0.07308108944599195. NDCG@10: 0.05252181147864971
+Epoch: 86
+	Updating: time=36.50
+Recall@10: 0.07285814618683699. NDCG@10: 0.05230436035873713
+Epoch: 87
+	Updating: time=36.54
+Recall@10: 0.07452954040697773. NDCG@10: 0.052710836105994974
+Epoch: 88
+	Updating: time=36.50
+Recall@10: 0.07456049057720367. NDCG@10: 0.05274004614850128
+Epoch: 89
+	Updating: time=36.57
+Recall@10: 0.07511308716044093. NDCG@10: 0.053280820194547336
+Epoch: 90
+	Updating: time=36.52
+Recall@10: 0.07426671904387781. NDCG@10: 0.05330686958316888
+Epoch: 91
+	Updating: time=36.43
+Recall@10: 0.0752345070590196. NDCG@10: 0.05376961369610406
+Epoch: 92
+	Updating: time=36.42
+Recall@10: 0.07429732910234303. NDCG@10: 0.05341017896734552
+Epoch: 93
+	Updating: time=37.16
+Recall@10: 0.0728635879750086. NDCG@10: 0.053037605841249454
+Epoch: 94
+	Updating: time=38.20
+Recall@10: 0.07481276847572112. NDCG@10: 0.053518411367870736
+Epoch: 95
+	Updating: time=41.31
+Recall@10: 0.07467451304498658. NDCG@10: 0.05298329900377597
+Epoch: 96
+	Updating: time=41.53
+Recall@10: 0.07462545192350205. NDCG@10: 0.052844757363271766
+Epoch: 97
+	Updating: time=44.00
+Recall@10: 0.07461116722955162. NDCG@10: 0.053021397248001124
+Epoch: 98
+	Updating: time=42.50
+Recall@10: 0.07479363718918036. NDCG@10: 0.053111436911040186
+Epoch: 99
+	Updating: time=43.49
+Recall@10: 0.07479482758034289. NDCG@10: 0.053153051641467906
