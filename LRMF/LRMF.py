@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.distutils.misc_util import appendpath
 
 class LRMF():
     def __init__(self, l1, l2):
