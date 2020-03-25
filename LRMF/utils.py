@@ -5,6 +5,7 @@ import numpy as np
 import os
 import networkx as net
 import time
+from scipy.sparse import csr_matrix
 
 DATA_ROOT = '../EATNN/data/ciao'
 
@@ -53,3 +54,26 @@ def build_colike_network(data: pd.DataFrame):
         G[u][v]['weight'] = normalized_weight
 
     return G
+
+
+def build_interaction_matrix(data: pd.DataFrame):
+    uids = data['uid'].unique()
+    iids = data['iid'].unique()
+    num_users = len(uids)
+    num_items = len(iids)
+    inner_2raw_uid = dict(zip(range(num_users), uids))
+    raw_2inner_uid = dict(zip(uids, range(num_users)))
+    inner_2raw_iid = dict(zip(range(num_items), iids))
+    raw_2inner_iid = dict(zip(iids, range(num_items)))
+
+    inner_uids = np.array([raw_2inner_uid[uid] for uid in data['uid']])
+    inner_iids = np.array([raw_2inner_iid[iid] for iid in data['iid']])
+    interactions = np.array(data['count'])
+    R = csr_matrix((interactions, (inner_uids, inner_iids)), shape=(num_users, num_items))
+
+    return R, inner_2raw_uid, raw_2inner_uid, inner_2raw_iid, raw_2inner_iid
+
+if __name__ == '__main__':
+    data = load_data('tmp.csv')
+    R, _, _, _, _ = build_interaction_matrix(data)
+    print(R)
