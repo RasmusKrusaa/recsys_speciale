@@ -102,77 +102,42 @@ def divrank(G, alpha=0.25, d=0.85, personalization=None,
                         'in %d iterations.' % max_iter)
 
 
-def divrank_scipy(G, alpha=0.25, d=0.85, personalization=None,
-                  max_iter=100, tol=1.0e-6, nstart=None, weight='weight',
-                  dangling=None):
-    '''
-    Returns the DivRank (Diverse Rank) of the nodes in the graph.
-    This code is based on networkx.pagerank_scipy
-    '''
-    N = len(G)
-    if N == 0:
-        return {}
+if __name__ == '__main__':
 
-    nodelist = G.nodes()
-    M = nx.to_scipy_sparse_matrix(G, nodelist=nodelist, weight=weight,
-                                  dtype=float)
-    S = np.array(M.sum(axis=1)).flatten()
-    S[S != 0] = 1.0 / S[S != 0]
-    Q = scipy.sparse.spdiags(S.T, 0, *M.shape, format='csr')
-    M = Q * M
+    g = nx.Graph()
 
-    # self-link (DivRank)
-    M = scipy.sparse.lil_matrix(M)
-    M.setdiag(0.0)
-    M = alpha * M
-    M.setdiag(1.0 - alpha)
-    #print M.sum(axis=1)
+    # this network appears in the reference.
+    edges = {
+        1: [2, 3, 6, 7, 8, 9],
+        2: [1, 3, 10, 11, 12],
+        3: [1, 2, 15, 16, 17],
+        4: [11, 13, 14],
+        5: [17, 18, 19, 20],
+        6: [1],
+        7: [1],
+        8: [1],
+        9: [1],
+        10: [2],
+        11: [4],
+        12: [2],
+        13: [4],
+        14: [4],
+        15: [3],
+        16: [3],
+        17: [3, 5],
+        18: [5],
+        19: [5],
+        20: [5]
+    }
 
-    # initial vector
-    x = np.repeat(1.0 / N, N)
+    for u, vs in edges.items():
+        for v in vs:
+            g.add_edge(u, v)
 
-    # Personalization vector
-    if personalization is None:
-        p = np.repeat(1.0 / N, N)
-    else:
-        missing = set(nodelist) - set(personalization)
-        if missing:
-            raise NetworkXError('Personalization vector dictionary '
-                                'must have a value for every node. '
-                                'Missing nodes %s' % missing)
-        p = scipy.array([personalization[n] for n in nodelist],
-                        dtype=float)
-        p = p / p.sum()
-
-    # Dangling nodes
-    if dangling is None:
-        dangling_weights = p
-    else:
-        missing = set(nodelist) - set(dangling)
-
-
-        if missing:
-            raise NetworkXError('Dangling node dictionary '
-                                'must have a value for every node. '
-                                'Missing nodes %s' % missing)
-        # Convert the dangling dictionary into an array in nodelist order
-        dangling_weights = scipy.array([dangling[n] for n in nodelist],
-                                       dtype=float)
-        dangling_weights /= dangling_weights.sum()
-    is_dangling = np.where(S == 0)[0]
-
-    # power iteration: make up to max_iter iterations
-    for _ in range(max_iter):
-        xlast = x
-        D_t =  M * x
-        x = (
-            d * (x / D_t * M * x + sum(x[is_dangling]) * dangling_weights)
-            + (1.0 - d) * p
-        )
-        # check convergence, l1 norm
-        err = np.absolute(x - xlast).sum()
-        if err < N * tol:
-            return dict(zip(nodelist, map(float, x)))
-
-    raise NetworkXError('divrank_scipy: power iteration failed to converge '
-                        'in %d iterations.' % max_iter)
+    scores = divrank(g)
+    print(scores)
+    # print sum(scores.values())
+    print('# rank: node score')
+    sorted_scores = sorted(scores, key=lambda n: scores[n], reverse=True)
+    for i, n in sorted_scores:
+        print('# {}: {} {}'.format(i + 1, n, scores[n]))

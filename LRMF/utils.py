@@ -6,8 +6,9 @@ import os
 import networkx as net
 import time
 from scipy.sparse import csr_matrix
+from sklearn.model_selection import GroupShuffleSplit
 
-DATA_ROOT = '../EATNN/data/ciao'
+DATA_ROOT = 'data/ciao'
 
 
 def load_data(csv_file: str):
@@ -56,7 +57,37 @@ def build_colike_network(data: pd.DataFrame):
     return G
 
 
-def build_interaction_matrix(data: pd.DataFrame):
+def build_interaction_matrix(data: pd.DataFrame, raw_2inner_uid: dict, raw_2inner_iid: dict):
+    inner_uids = np.array([raw_2inner_uid[uid] for uid in data['uid']])
+    inner_iids = np.array([raw_2inner_iid[iid] for iid in data['iid']])
+    interactions = np.array(data['count'], dtype=int)
+    R = csr_matrix((interactions, (inner_uids, inner_iids)), shape=(len(raw_2inner_uid), len(raw_2inner_iid)))
+
+    return R
+
+
+def train_test_split(data: pd.DataFrame, test_size: float = 0.75):
+    unique_uids = data['uid'].unique()
+
+    # removing items with less than 5 interactions
+    data = data.groupby('iid').filter(lambda iid: len(iid) >= 5)
+
+    train = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    test = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    for uid in unique_uids:
+        # shuffled user data
+        user_data = data[data['uid'] == uid].sample(frac=1, random_state=2020)
+        # computing how many interactions to use as test
+        num_interactions = len(user_data)
+        test_interactions = round(num_interactions * test_size)
+        # adding approx 75% of user's data to test and 25% of user's data to train
+        train = train.append(user_data[test_interactions:])
+        test = test.append(user_data[:test_interactions])
+
+    return train, test
+
+
+def build_id_dicts(data: pd.DataFrame):
     uids = data['uid'].unique()
     iids = data['iid'].unique()
     num_users = len(uids)
@@ -66,14 +97,4 @@ def build_interaction_matrix(data: pd.DataFrame):
     inner_2raw_iid = dict(zip(range(num_items), iids))
     raw_2inner_iid = dict(zip(iids, range(num_items)))
 
-    inner_uids = np.array([raw_2inner_uid[uid] for uid in data['uid']])
-    inner_iids = np.array([raw_2inner_iid[iid] for iid in data['iid']])
-    interactions = np.array(data['count'])
-    R = csr_matrix((interactions, (inner_uids, inner_iids)), shape=(num_users, num_items))
-
-    return R, inner_2raw_uid, raw_2inner_uid, inner_2raw_iid, raw_2inner_iid
-
-if __name__ == '__main__':
-    data = load_data('tmp.csv')
-    R, _, _, _, _ = build_interaction_matrix(data)
-    print(R)
+    return inner_2raw_uid, raw_2inner_uid, inner_2raw_iid, raw_2inner_iid
