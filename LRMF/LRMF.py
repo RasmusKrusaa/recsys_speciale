@@ -180,7 +180,7 @@ class LRMF():
         return active_maxvol_items[:self.num_local_questions]
 
     def _learn_local_repr_and_trans_matrix(self, groups, maxvol_iids):
-        for _, val in groups:
+        for _, val in groups.items():
             users = val['users']
             global_representatives = val['questions']
             local_representatives = self._find_local_representatives(users, maxvol_iids, global_representatives)
@@ -195,7 +195,7 @@ class LRMF():
     def _learn_V(self, groups):
         S = np.zeros(shape=(self.num_users, self.embedding_size))
         # Building S according to equation 8
-        for _, val in groups:
+        for _, val in groups.items():
             users = val['users']
             T = val['transformation']
             global_representatives = val['questions']
@@ -211,7 +211,7 @@ class LRMF():
 
     def _compute_loss(self, groups):
         loss = 0
-        for _, val in groups:
+        for _, val in groups.items():
             users = val['users']
             T = val['transformation']
             local_representatives = val['local_questions']
@@ -247,7 +247,8 @@ def test_tree(users, items, depth):
 
 if __name__ == '__main__':
     data = utils.load_data('ratings.csv')
-    candidate_items = None
+    with open('data/candidate_items.txt', 'rb') as f:
+        candidate_items = pickle.load(f)
     #for gr in [1,2,3]:
     #    for lr in [1,2,3]:
     #        if os.path.exists('data/candidate_items.txt'):
@@ -260,5 +261,5 @@ if __name__ == '__main__':
     groups, V = lrmf.fit()
     with open(f'models/groups_{global_questions}g_{local_questions}l.txt', 'wb') as f:
         pickle.dump(groups, f)
-    with open(f'models/V_{global_questions}g_{local_questions}l.txt', 'rb') as f:
+    with open(f'models/V_{global_questions}g_{local_questions}l.txt', 'wb') as f:
         pickle.dump(V, f)
