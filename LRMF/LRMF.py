@@ -44,16 +44,16 @@ class LRMF():
                 pickle.dump(self.candidate_items, f)
 
     def fit(self, tol: float = 0.01, maxiters: int = 10):
-        users = [self.raw_2inner_uid[uid] for uid in self.train_data['uid']]
+        users = [self.raw_2inner_uid[uid] for uid in self.train_data['uid'].unique()]
         items = self.candidate_items
 
         loss = []
         prev_loss = np.inf
         res = None
         for epoch in range(maxiters):
-            maxvol_representatives, _ = maxvol.maxvol(self.V)
+            maxvol_representatives, _ = maxvol.maxvol(self.V.T)
             # Learning group assignments, G and global representatives U1g
-            tree = self._grow_tree(users, items, 0, maxvol_representatives)
+            tree = self._grow_tree(users, items, 0, maxvol_representatives, [])
             groups = tree.groups_and_questions()
 
             # Learning local representatives and transformation matrices, U2g and Tg
@@ -65,7 +65,8 @@ class LRMF():
 
             # Computing loss
             epoch_loss = self._compute_loss(groups_with_local_and_transformation)
-            print(f'Epoch: {epoch} done with loss: {epoch_loss}')
+            print(f'Epoch: {epoch} done with loss: {epoch_loss}.\n'
+                  f'-'*20)
             # Until converged or maxiters iterations
             if abs(prev_loss - epoch) < tol:
                 print(f'Loss is converged with tolerance of {tol}.\n'
@@ -92,7 +93,7 @@ class LRMF():
         return set(inner_candidate_iids)
 
     def _grow_tree(self, users, items: set, depth: int,
-                   maxvol_iids: list, global_representatives: list = None,
+                   maxvol_iids: list, global_representatives: list,
                    total_loss: float = np.inf):
         '''
         :param users: list of uids
@@ -103,9 +104,6 @@ class LRMF():
         :return: Tree
         '''
         # Work on parameters
-        if global_representatives is None:
-            print('Starting growth of tree...')
-            global_representatives = list()
         best_item, like, dislike = None, None, None
 
         # finding local representatives based on which items are "active", meaning they are consumed
@@ -126,8 +124,8 @@ class LRMF():
                 loss[item] += loss_like[item]
                 loss[item] += loss_dislike[item]
             # find item with lowest loss
-            print(f'Found best candidate item: {best_item} at {time.strftime("%H:%M:%S", time.localtime())}')
             best_item = min(loss, key=loss.get)
+            print(f'Found best candidate item: {best_item} at {time.strftime("%H:%M:%S", time.localtime())}')
 
             # if total loss is NOT decreased
             if total_loss <= loss[best_item]:
@@ -138,12 +136,15 @@ class LRMF():
             print(f'Splitting users')
             U_like, U_dislike = self._split_users(users, best_item)
 
+            # Lists are funny
+            new_global_representatives = global_representatives.copy()
+            new_global_representatives.append(best_item)
             # building left side (like) of tree
             like = self._grow_tree(U_like, items - {best_item}, depth + 1, maxvol_iids,
-                                   global_representatives.append(best_item), loss_like[best_item])
+                                   new_global_representatives, loss_like[best_item])
             # building right side (dislike) of tree
             dislike = self._grow_tree(U_dislike, items - {best_item}, depth + 1, maxvol_iids,
-                                      global_representatives.append(best_item), loss_dislike[best_item])
+                                      new_global_representatives, loss_dislike[best_item])
 
         return Tree.Node(users, best_item, like, dislike)
 
