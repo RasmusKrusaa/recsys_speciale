@@ -103,8 +103,8 @@ class Metrics2():
         sorted_actuals = np.sort(actuals)[::-1]
         idcg_relevances = [act for act in sorted_actuals[:k]]
 
-        dcg = np.sum((np.power(dcg_relevances, 2) - 1) / np.log2(np.arange(2, len(dcg_relevances) + 2)))
-        idcg = np.sum((np.power(idcg_relevances, 2) - 1) / np.log2(np.arange(2, len(idcg_relevances) + 2)))
+        dcg = np.sum((np.power(2, dcg_relevances) - 1) / np.log2(np.arange(2, len(dcg_relevances) + 2)))
+        idcg = np.sum((np.power(2, idcg_relevances) - 1) / np.log2(np.arange(2, len(idcg_relevances) + 2)))
 
         return dcg / idcg
 
