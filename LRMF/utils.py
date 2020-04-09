@@ -1,5 +1,7 @@
+import random
 from collections import defaultdict
 
+from sklearn.model_selection import train_test_split
 import pandas as pd
 import numpy as np
 import os
@@ -65,6 +67,23 @@ def build_interaction_matrix(data: pd.DataFrame, raw_2inner_uid: dict, raw_2inne
 
     return R
 
+def train_test_split_user(data: pd.DataFrame, test_size: float = 0.3):
+
+    unique_uids = data['uid'].unique()
+    random.shuffle(unique_uids, random.seed(2020))
+    num_test_users = int(test_size*len(unique_uids))
+    test_users, train_users = unique_uids[:num_test_users], unique_uids[num_test_users:]
+
+    train = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    test = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    for uid in train_users:
+        user_data = data[data['uid'] == uid]
+        train = train.append(user_data)
+    for uid in test_users:
+        user_data = data[data['uid'] == uid]
+        test = test.append(user_data)
+
+    return train, test
 
 def train_test_split(data: pd.DataFrame, test_size: float = 0.75):
     unique_uids = data['uid'].unique()

@@ -28,7 +28,7 @@ class LRMF():
         self.num_candidate_items = num_candidate_items
         self.num_global_questions = num_global_questions
         self.num_local_questions = num_local_questions
-        self.train_data, self.test_data = utils.train_test_split(data)
+        self.train_data, self.test_data = utils.train_test_split_user(data)
         self.inner_2raw_uid, self.raw_2inner_uid, self.inner_2raw_iid, self.raw_2inner_iid = utils.build_id_dicts(data)
         self.R = utils.build_interaction_matrix(self.train_data, self.raw_2inner_uid, self.raw_2inner_iid)
         self.embedding_size = embedding_size
@@ -40,7 +40,7 @@ class LRMF():
             self.candidate_items = candidate_items
         else:
             self.candidate_items = self._find_candidate_items()
-            with open('data/candidate_items.txt', 'wb') as f:
+            with open('data/candidate1_items.txt', 'wb') as f:
                 pickle.dump(self.candidate_items, f)
 
     def fit(self, tol: float = 0.01, maxiters: int = 10):
@@ -248,8 +248,8 @@ def test_tree(users, items, depth):
 
 if __name__ == '__main__':
     data = utils.load_data('ratings.csv')
-    with open('data/candidate_items.txt', 'rb') as f:
-        candidate_items = pickle.load(f)
+    #with open('data/candidate_items.txt', 'rb') as f:
+    #candidate_items = pickle.load(f)
     #for gr in [1,2,3]:
     #    for lr in [1,2,3]:
     #        if os.path.exists('data/candidate_items.txt'):
@@ -257,10 +257,10 @@ if __name__ == '__main__':
     #                candidate_items = pickle.load(f)
     global_questions = 2
     local_questions = 1
-    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidate_items)
+    lrmf = LRMF(data, global_questions, local_questions)
     print(f'Trying {global_questions} global questions and {local_questions} local questions')
     groups, V = lrmf.fit()
-    with open(f'models/groups_{global_questions}g_{local_questions}l.txt', 'wb') as f:
+    with open(f'models/groups_with_user_split_{global_questions}g_{local_questions}l.txt', 'wb') as f:
         pickle.dump(groups, f)
-    with open(f'models/V_{global_questions}g_{local_questions}l.txt', 'wb') as f:
+    with open(f'models/V_with_user_split_{global_questions}g_{local_questions}l.txt', 'wb') as f:
         pickle.dump(V, f)
