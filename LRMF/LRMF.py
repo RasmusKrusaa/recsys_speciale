@@ -1,12 +1,11 @@
-import math
-import os
 from collections import defaultdict
-from typing import Tuple
-import scipy
-from scipy import sparse
 from scipy.linalg import solve_sylvester
+import scipy.sparse
+
 import numpy as np
 
+import evaluation.evaluation_v2 as eval2
+import sys
 import DivRank as dr
 import Tree
 import pandas as pd
@@ -31,53 +30,65 @@ class LRMF():
         self.train_data, self.test_data = utils.train_test_split_user(data)
         self.inner_2raw_uid, self.raw_2inner_uid, self.inner_2raw_iid, self.raw_2inner_iid = utils.build_id_dicts(data)
         self.R = utils.build_interaction_matrix(self.train_data, self.raw_2inner_uid, self.raw_2inner_iid)
+        self.test_R = utils.build_interaction_matrix(self.test_data, self.raw_2inner_uid, self.raw_2inner_iid)
         self.embedding_size = embedding_size
         self.num_users, self.num_items = self.R.shape
         self.V = np.random.rand(embedding_size, self.num_items)  # Item representations
         self.alpha = alpha
         self.beta = beta
+
         if candidate_items is not None:
             self.candidate_items = candidate_items
         else:
             self.candidate_items = self._find_candidate_items()
-            with open('data/candidate1_items.txt', 'wb') as f:
+            with open('data/candidate_items.txt', 'wb') as f:
                 pickle.dump(self.candidate_items, f)
 
     def fit(self, tol: float = 0.01, maxiters: int = 10):
         users = [self.raw_2inner_uid[uid] for uid in self.train_data['uid'].unique()]
         items = self.candidate_items
 
+        best_tree = None
+        best_V = None
+        best_loss = sys.maxsize
+        best_ndcg = sys.maxsize
+
+        ndcg_list = []
         loss = []
         prev_loss = np.inf
-        res = None
+        tree = None
         for epoch in range(maxiters):
             maxvol_representatives, _ = maxvol.maxvol(self.V.T)
-            # Learning group assignments, G and global representatives U1g
+
+            # Building tree with global questions
             tree = self._grow_tree(users, items, 0, maxvol_representatives, [])
-            groups = tree.groups_and_questions()
 
-            # Learning local representatives and transformation matrices, U2g and Tg
-            groups_with_local_and_transformation = self._learn_local_repr_and_trans_matrix(groups,
-                                                                                           maxvol_representatives)
+            # update tree with local questions and transformation matrix
+            self._set_globals_learn_locals_and_build_T(tree, maxvol_representatives)
 
-            # Learning global item representation matrix, V
-            self.V = self._learn_V(groups_with_local_and_transformation)
+            # Learn item_profiles
+            self.V = self._learn_item_profiles(tree)
 
             # Computing loss
-            epoch_loss = self._compute_loss(groups_with_local_and_transformation)
+            epoch_loss = self._compute_loss(tree)
             print(f'Epoch: {epoch} done with loss: {epoch_loss}.\n'
-                  f'-'*20)
-            # Until converged or maxiters iterations
-            if abs(prev_loss - epoch) < tol:
-                print(f'Loss is converged with tolerance of {tol}.\n'
-                      f'Previous loss: {prev_loss}, current loss: {epoch_loss}')
-                return groups_with_local_and_transformation, self.V
-            loss.append(epoch_loss)
-            res = groups_with_local_and_transformation
-            prev_loss = epoch_loss
-            # TODO: evaluation
+                  f'-' * 20)
 
-        return res, self.V
+            loss.append(epoch_loss)
+
+            ndcg = self.evaluate(tree)
+
+            if epoch_loss < best_loss:
+                best_loss = epoch_loss
+                best_tree = tree
+                best_ndcg = ndcg
+                best_V = self.V
+
+            print(f'this is the ndcg: {ndcg}')
+            ndcg_list.append(ndcg)
+
+        print(f'The ndcg at the lowest loss was {best_ndcg}')
+        return best_tree, best_V, ndcg_list
 
     def _find_candidate_items(self):
         # building item-item colike network
@@ -93,55 +104,61 @@ class LRMF():
         return set(inner_candidate_iids)
 
     def _grow_tree(self, users, items: set, depth: int,
-                   maxvol_iids: list, global_representatives: list,
+                   maxvol_iids: list, global_representatives: list = None,
                    total_loss: float = np.inf):
         '''
         :param users: list of uids
         :param items: list of iids on candidate items
         :param depth: depth of tree
         :param global_representatives: items asked previously (defaults to None)
-
         :return: Tree
         '''
         # Work on parameters
         best_item, like, dislike = None, None, None
 
-        # finding local representatives based on which items are "active", meaning they are consumed
-        local_representatives = self._find_local_representatives(users, maxvol_iids, global_representatives)
-
-        # recursively builds tree
         if depth < self.num_global_questions:
+            # finding local representatives based on which items are "active", meaning they are consumed
+            local_representatives = self._find_local_representatives(users, maxvol_iids, global_representatives)
+
             print(f'At depth: {depth}. Time: {time.strftime("%H:%M:%S", time.localtime())}')
             print(f'Finding best candidate item')
             # computes loss with equation 11 for each candidate item
             loss = defaultdict(float)
             loss_like = defaultdict(float)
             loss_dislike = defaultdict(float)
+
             for item in items:
                 like, dislike = self._split_users(users, item)
                 loss_like[item] = self._evaluate_eq11(like, global_representatives, local_representatives)
                 loss_dislike[item] = self._evaluate_eq11(dislike, global_representatives, local_representatives)
                 loss[item] += loss_like[item]
                 loss[item] += loss_dislike[item]
+
             # find item with lowest loss
             best_item = min(loss, key=loss.get)
             print(f'Found best candidate item: {best_item} at {time.strftime("%H:%M:%S", time.localtime())}')
 
-            # if total loss is NOT decreased
+            # Lists are funny
+            new_global_representatives = global_representatives.copy()
+            new_global_representatives.append(best_item)
+
+            # return the node as is if a split wont reduce loss
             if total_loss <= loss[best_item]:
                 print(f'Total loss not decreased.\n'
                       f'Total loss: {total_loss}, loss: {loss[best_item]}')
                 return Tree.Node(users, None, None, None)
 
+            # else split group into like and dislike
             print(f'Splitting users')
             U_like, U_dislike = self._split_users(users, best_item)
 
-            # Lists are funny
-            new_global_representatives = global_representatives.copy()
-            new_global_representatives.append(best_item)
+            if not U_like or not U_dislike:
+                return Tree.Node(users, None, None, None)
+
             # building left side (like) of tree
             like = self._grow_tree(U_like, items - {best_item}, depth + 1, maxvol_iids,
                                    new_global_representatives, loss_like[best_item])
+
             # building right side (dislike) of tree
             dislike = self._grow_tree(U_dislike, items - {best_item}, depth + 1, maxvol_iids,
                                       new_global_representatives, loss_dislike[best_item])
@@ -178,54 +195,98 @@ class LRMF():
     def _find_local_representatives(self, users, maxvol_representatives, global_representatives):
         active_maxvol_items = [iid for iid in maxvol_representatives
                                if np.sum(self.R[users, :][:, iid]) > 0 and iid not in global_representatives]
-        return active_maxvol_items[:self.num_local_questions]
+        if active_maxvol_items:
+            return active_maxvol_items[:self.num_local_questions]
+        return list(maxvol_representatives[:self.num_local_questions])
 
-    def _learn_local_repr_and_trans_matrix(self, groups, maxvol_iids):
-        for _, val in groups.items():
-            users = val['users']
-            global_representatives = val['questions']
-            local_representatives = self._find_local_representatives(users, maxvol_iids, global_representatives)
-            B = self._build_B(users, local_representatives, global_representatives)
-            T = self._solve_sylvester(B, users)
-            # storing values
-            val['transformation'] = T
-            val['local_questions'] = local_representatives
-
-        return groups
-
-    def _learn_V(self, groups):
+    def _learn_item_profiles(self, tree):
         S = np.zeros(shape=(self.num_users, self.embedding_size))
-        # Building S according to equation 8
-        for _, val in groups.items():
-            users = val['users']
-            T = val['transformation']
-            global_representatives = val['questions']
-            local_representatives = val['local_questions']
-            for uid in users:
-                # obtaining answers
-                B = self._build_B([uid], local_representatives, global_representatives)
-                # eq. 8
-                S[uid] = B @ T
-        # Computing eq. 7
-        V = inv(S.T @ S + self.beta * np.identity(self.embedding_size)) @ S.T @ self.R
-        return V
 
-    def _compute_loss(self, groups):
-        loss = 0
-        for _, val in groups.items():
-            users = val['users']
-            T = val['transformation']
-            local_representatives = val['local_questions']
-            global_representatives = val['questions']
+        for inner_uid in range(self.num_users):
+            raw_uid = self.inner_2raw_uid[inner_uid]
+            leaf = Tree.find_user_group(raw_uid, tree)
+            B = self._build_B([raw_uid], leaf.local_questions, leaf.global_questions)
 
-            B = self._build_B(users, local_representatives, global_representatives)
+            S[inner_uid] = B @ leaf.transformation
+
+        return inv(S.T @ S + self.beta * np.identity(self.embedding_size)) @ S.T @ self.R
+
+    def _compute_loss(self, tree):
+        if tree.is_leaf():
+            B = self._build_B(tree.users, tree.local_questions, tree.global_questions)
+            pred = B @ tree.transformation @ self.V
+            Rg = self.R[tree.users]
+            return norm(Rg[Rg.nonzero()] - pred[Rg.nonzero()]) + self.alpha * norm(tree.transformation)
+
+        else:
+            return self._compute_loss(tree.like) + self._compute_loss(tree.dislike)
+
+    def _set_globals_learn_locals_and_build_T(self, tree, maxvol, global_questions: list = None):
+        if global_questions == None:
+            global_questions = []
+
+        if tree.is_leaf():
+            tree.set_globals(global_questions)
+
+            locals = self._find_local_representatives(tree.users, maxvol, global_questions)
+            tree.set_locals(locals)
+
+            B = self._build_B(tree.users, locals, global_questions)
+            tree.set_transformation(self._solve_sylvester(B, tree.users))
+
+        else:
+            global_questions.append(tree.question)
+            g_q = global_questions.copy()
+
+            self._set_globals_learn_locals_and_build_T(tree.like, maxvol, g_q)
+            self._set_globals_learn_locals_and_build_T(tree.dislike, maxvol, g_q)
+
+    def evaluate(self, tree):
+        metric = 0
+        # convert from object to string to numeric..
+        users = np.sort(self.test_data.uid.unique().astype(str).astype(int))
+        R = pd.pivot_table(data=self.test_data.astype(str).astype(int), values='count', index='uid', columns='iid').fillna(0)
+
+#        pred = np.ndarray(shape=(self.V.shape[1], len(users)))
+#        pred = pd.DataFrame(data=0, columns=range(self.V.shape[1]), index=pd.Series(users))
+
+        for raw_uid in users:
+            leaf = Tree.traverse_a_user(user=raw_uid, data=self.test_data.astype(str).astype(int), tree=tree)  # replace with a traverse
+
+            U1 = None
+
+            try:
+                U1 = R[leaf.global_questions].loc[raw_uid].to_numpy()
+            except KeyError:
+                print('noooo')
+
+            U2 = R[leaf.local_questions].loc[raw_uid].to_numpy()
+            B = np.hstack((U1, U2, np.ones(1)))
+
+            T = leaf.transformation
             pred = B @ T @ self.V
+            train_iids = list(self.train_data[self.train_data['uid'] == raw_uid].iid)
+            questions = leaf.global_questions + leaf.local_questions
 
-            Rg = self.R[users]
-            loss += norm(Rg[Rg.nonzero()] - pred[Rg.nonzero()]) + \
-                    self.alpha * norm(T)
+            try:
+                pred[train_iids] = -np.inf
+            except KeyError:
+                print('Encountered a key error here')
 
-        return loss + self.beta * norm(self.V)
+            if any(x > 11211 for x in questions):
+                print('sss')
+            try:
+                pred[questions] = -np.inf
+            except KeyError:
+                print('Encountered a key error here')
+
+
+            # find actuals
+            actual = R.loc[raw_uid].to_numpy()
+            m = eval2.Metrics2(np.array([pred]), np.array([actual]), 10, 'ndcg').calculate()
+            metric += m['ndcg']
+
+        return metric / len(self.test_data.uid.unique())
 
 
 def test_tree(users, items, depth):
@@ -247,20 +308,19 @@ def test_tree(users, items, depth):
 
 
 if __name__ == '__main__':
+    # Initialize things.
     data = utils.load_data('ratings.csv')
-    #with open('data/candidate_items.txt', 'rb') as f:
-    #candidate_items = pickle.load(f)
-    #for gr in [1,2,3]:
-    #    for lr in [1,2,3]:
-    #        if os.path.exists('data/candidate_items.txt'):
-    #            with open('data/candidate_items.txt', 'rb') as f:
-    #                candidate_items = pickle.load(f)
+    with open('data/candidate_items.txt', 'rb') as f:
+        candidate_items = pickle.load(f)
+
     global_questions = 2
     local_questions = 1
-    lrmf = LRMF(data, global_questions, local_questions)
-    print(f'Trying {global_questions} global questions and {local_questions} local questions')
-    groups, V = lrmf.fit()
-    with open(f'models/groups_with_user_split_{global_questions}g_{local_questions}l.txt', 'wb') as f:
-        pickle.dump(groups, f)
-    with open(f'models/V_with_user_split_{global_questions}g_{local_questions}l.txt', 'wb') as f:
+    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidate_items)
+    res, V, ndcg_list = lrmf.fit()
+
+    with open(f'models/tree25-75.txt', 'wb') as f:
+        pickle.dump(res, f)
+    with open(f'models/V25-75.txt', 'wb') as f:
         pickle.dump(V, f)
+
+    print('hejsa')
