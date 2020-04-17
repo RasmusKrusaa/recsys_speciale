@@ -1,4 +1,5 @@
 import os
+import pickle
 import sys
 import time
 
@@ -7,20 +8,12 @@ import scipy.sparse
 import tensorflow.compat.v1 as tf
 import numpy as np
 
+import Tree
+import utils
+
 tf.disable_v2_behavior()
 
-DATA_ROOT = 'data/ciao'
-
-unique_uid = list()
-with open(os.path.join(DATA_ROOT, 'unique_uid_sub.txt'), 'r') as f:
-    for line in f:
-        unique_uid.append(line.strip())
-unique_iid = list()
-with open(os.path.join(DATA_ROOT, 'unique_sid_sub.txt'), 'r') as f:
-    for line in f:
-        unique_iid.append(line.strip())
-n_users = len(unique_uid)
-n_items = len(unique_iid)
+DATA_ROOT = 'data/ciao_from_them'
 
 
 def load_data(csv_file):
@@ -28,32 +21,38 @@ def load_data(csv_file):
     return data
 
 
-test_data = load_data(os.path.join(DATA_ROOT, 'test.csv'))
-train_data = load_data(os.path.join(DATA_ROOT, 'train.csv'))
+data = load_data(os.path.join(DATA_ROOT, 'ratings.csv'))
+unique_uid = data['uid'].unique()
+unique_iid = data['iid'].unique()
+num_users = len(unique_uid)
+num_items = len(unique_iid)
+
+train_data, test_data = utils.train_test_split(data)
 social_data = load_data(os.path.join(DATA_ROOT, 'trust.csv'))
 
+with open('../LRMF/models/tree25-75.txt', 'rb') as f:
+    tree = pickle.load(f)
 
-def _writeline_and_time(s):
+def writeline_and_time(s):
     sys.stdout.write(s)
     sys.stdout.flush()
     return time.time()
 
 class EATNN:
     """
-    Reproduction of paper: "An Eicient Adaptive Transfer Neural Network for Social-aware Recommendation"
+    Reproduction of paper: "An Efficient Adaptive Transfer Neural Network for Social-aware Recommendation"
     Authors: Chong Chen, Min Zhang, Chenyang Wang, Weizhi Ma, Minming Li, Shaoping Ma
     url: http://www.thuir.cn/group/~mzhang/publications/SIGIR2019ChenC.pdf
     """
-    def __init__(self, n_users, n_items, max_item_pu, max_friend_pu, embedding_size = 64, attention_size = 32):
+    def __init__(self, n_users, n_items, max_questions, max_items, max_friends, embedding_size = 64, attention_size = 32):
         """
         Constructs object of EATNN class
 
         :param n_users: Number of users
         :param n_items: Number of items
-        TODO: what is this?
-        :param max_item_pu: Max number of items for all users
-        TODO: what is this?
-        :param max_friend_pu: Max number of friendships for all users
+        :param max_questions: Max number of questions for all users
+        :param max_items: Max number of items for all users
+        :param max_friends: Max number of friendships for all users
         :param embedding_size: Size of embeddings (d in paper). Defaults to 64
         :param attention_size: Size of output from attention network (k in paper). Defaults to 32
         """
@@ -61,8 +60,9 @@ class EATNN:
         self.n_items = n_items
         self.embedding_size = embedding_size
         self.attention_size = attention_size
-        self.max_item_pu = max_item_pu
-        self.max_friend_pu = max_friend_pu
+        self.max_items = max_items
+        self.max_friends = max_friends
+        self.max_questions = max_questions
         # weighting for entries in R
         self.weight_r = 0.1
         # weighting for entries in X
@@ -99,7 +99,7 @@ class EATNN:
                                                         mean=0.0, stddev=0.01, dtype=tf.float32, name='G'))
         # Embeddings for questionnaires (M x D)
         self.V = tf.Variable(tf.random.truncated_normal(shape=[self.n_items + 1, self.embedding_size],
-                                                        mean=0.0, stddev=0.01, dtype=tf.float32, name='P'))
+                                                        mean=0.0, stddev=0.01, dtype=tf.float32, name='V'))
 
 
         # Weights used in item domain prediction layer
@@ -134,9 +134,9 @@ class EATNN:
         self.input_u = tf.placeholder(tf.int32, [None, 1], name="input_uid")
         self.input_i = tf.placeholder(tf.int32, [None, 1], name='input_iid')
 
-        self.input_ur = tf.placeholder(tf.int32, [None, self.max_item_pu], name="input_ur")
-        self.input_uf = tf.placeholder(tf.int32, [None, self.max_friend_pu], name="input_ur")
-        self.input_uq = tf.placeholder(tf.int32, [None, self.n_items], name='input_uq')
+        self.input_ur = tf.placeholder(tf.int32, [None, self.max_items], name="input_ur")
+        self.input_uf = tf.placeholder(tf.int32, [None, self.max_friends], name="input_ur")
+        self.input_uq = tf.placeholder(tf.int32, [None, self.max_questions], name='input_uq')
 
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
 
@@ -230,7 +230,7 @@ class EATNN:
         self.pos_r = tf.einsum('ac,abc->abc', self.P_iu, self.pos_item)
         # Need to multiply with H_i as well
         self.pos_r = tf.einsum('ajk,kl->ajl', self.pos_r, self.H_i)
-        self.pos_r = tf.reshape(self.pos_r, [-1, max_item_pu])
+        self.pos_r = tf.reshape(self.pos_r, [-1, max_items])
 
         # Social embeddings lookup
         self.pos_friend = tf.nn.embedding_lookup(self.G, self.input_uf)
@@ -242,7 +242,7 @@ class EATNN:
         self.pos_f = tf.einsum('ac,abc->abc', self.P_su, self.pos_friend)
         # Need to multiply with H_s as well
         self.pos_f = tf.einsum('abc,cd->abd', self.pos_friend, self.H_s)
-        self.pos_f = tf.reshape(self.pos_f, [-1, max_social_pu])
+        self.pos_f = tf.reshape(self.pos_f, [-1, max_friends])
 
         # Questionnaire embeddings lookup
         self.pos_questions = tf.nn.embedding_lookup(self.V, self.input_uq)
@@ -254,7 +254,7 @@ class EATNN:
         self.pos_q = tf.einsum('ac,abc->abc', self.P_qu, self.pos_questions)
         # Need to multiply with H_q as well
         self.pos_q = tf.einsum('abc,cd->abd', self.pos_questions, self.H_q)
-        self.pos_q = tf.reshape(self.pos_q, [-1, self.n_items])
+        self.pos_q = tf.reshape(self.pos_q, [-1, self.max_questions])
 
     def _prediction(self):
         """
@@ -433,23 +433,8 @@ def get_train_instances(train_r_set: dict, train_s_set: dict, train_q_set: dict)
     return user_train, item_train, social_train, question_train
 
 
-if __name__ == '__main__':
-    random_seed = 2020
-
-    u_train = np.array(train_data['uid'], dtype=np.int32)
-    i_train = np.array(train_data['sid'], dtype=np.int32)
-    u_test = np.array(test_data['uid'], dtype=np.int32)
-    i_test = np.array(test_data['sid'], dtype=np.int32)
-    u_friend = np.array(social_data['uid'], dtype=np.int32)
-    v_friend = np.array(social_data['sid'], dtype=np.int32)
-    # TODO: add questionnaire data
-
-    n_train_users = np.ones(len(u_train))
-    train_r = scipy.sparse.csr_matrix((n_train_users, (u_train, i_train)), dtype=np.int16, shape=(n_users, n_items))
-    n_test_users = np.ones(len(u_test))
-    test_r = scipy.sparse.csr_matrix((n_test_users, (u_test, i_test)), dtype=np.int16, shape=(n_users, n_items))
-
-    # Building test set
+def preprocess_data(u_train, u_test, i_train, i_test, u_friend, v_friend):
+    # Building interactions test set
     test_set = {}
     for u in range(len(u_test)):
         user = u_test[u]
@@ -458,39 +443,78 @@ if __name__ == '__main__':
         else:
             test_set[user] = [i_test[u]]
 
-    # Building training set for items
+    # Building training set for questionnaire
+    train_q_set = {}
+    max_questions = 0
+    for u in np.unique(u_train):
+        leaf = Tree.traverse_a_user(u, train_data, tree)
+        train_q_set[u] = leaf.global_questions + leaf.local_questions
+    # making sure all inputs are of same size
+    for u in train_q_set.keys():
+        if len(train_q_set[u]) > max_questions:
+            max_questions = len(train_q_set[u])
+    for u in train_q_set.keys():
+        while len(train_q_set[u]) < max_questions:
+            train_q_set[u].append(num_items)
+
+    # Building training set for interactions
+    # TODO: remove items asked in questionnaire
     train_set = {}
-    max_item_pu = 0
+    max_items = 0
     for u in range(len(u_train)):
+        # Not considering items asked as question
+        user = u_train[u]
+        if i_train[u] in train_q_set[user]:
+            continue
         if u_train[u] in train_set:
             train_set[u_train[u]].append(i_train[u])
         else:
             train_set[u_train[u]] = [i_train[u]]
+    # making sure all inputs are of same size
     for u in train_set.keys():
-        if len(train_set[u]) > max_item_pu:
-            max_item_pu = len(train_set[u])
-    for i in train_set.keys():
-        while len(train_set[i]) < max_item_pu:
-            train_set[i].append(n_items)
+        if len(train_set[u]) > max_items:
+            max_items = len(train_set[u])
+    for u in train_set.keys():
+        while len(train_set[u]) < max_items:
+            train_set[u].append(num_items)
 
     # Building training set for social domain
     train_f_set = {}
-    max_social_pu = 0
+    max_friends = 0
     for i in range(len(u_friend)):
         if u_friend[i] in train_f_set:
             train_f_set[u_friend[i]].append(v_friend[i])
         else:
             train_f_set[u_friend[i]] = [v_friend[i]]
     for i in train_f_set.keys():
-        if len(train_f_set[i]) > max_social_pu:
-            max_social_pu = len(train_f_set[i])
+        if len(train_f_set[i]) > max_friends:
+            max_friends = len(train_f_set[i])
     for i in train_set.keys():
         if not i in train_f_set:
-            train_f_set[i] = [n_users]
-        while len(train_f_set[i]) < max_social_pu:
-            train_f_set[i].append(n_users)
+            train_f_set[i] = [num_users]
+        while len(train_f_set[i]) < max_friends:
+            train_f_set[i].append(num_users)
 
-    # TODO: build training set for questionnaire domain like above
+    return test_set, train_set, train_f_set, train_q_set, max_questions, max_items, max_friends
+
+
+if __name__ == '__main__':
+    random_seed = 2020
+
+    u_train = np.array(train_data['uid'], dtype=np.int32)
+    u_test = np.array(test_data['uid'], dtype=np.int32)
+    i_train = np.array(train_data['iid'], dtype=np.int32)
+    i_test = np.array(test_data['iid'], dtype=np.int32)
+    u_friend = np.array(social_data['uid'], dtype=np.int32)
+    v_friend = np.array(social_data['sid'], dtype=np.int32)
+
+    n_train_users = np.ones(len(u_train))
+    train_r = scipy.sparse.csr_matrix((n_train_users, (u_train, i_train)), dtype=np.int16, shape=(num_users, num_items))
+    n_test_users = np.ones(len(u_test))
+    test_r = scipy.sparse.csr_matrix((n_test_users, (u_test, i_test)), dtype=np.int16, shape=(num_users, num_items))
+
+    test_set, train_set, train_f_set, train_q_set, max_questions, max_items, max_friends = \
+        preprocess_data(u_train, u_test, i_train, i_test, u_friend, v_friend)
 
     batch_size = 128
     with tf.Graph().as_default():
@@ -500,7 +524,7 @@ if __name__ == '__main__':
         session_conf.gpu_options.allow_growth = True
         sess = tf.Session(config=session_conf)
         with sess.as_default():
-            model = EATNN(n_users, n_items, max_item_pu, max_social_pu)
+            model = EATNN(num_users, num_items, max_questions, max_items, max_friends)
             model.build_graph()
 
             optimizer = tf.train.AdagradOptimizer(learning_rate=0.05, initial_accumulator_value=1e-8).minimize(model.loss)
@@ -512,7 +536,7 @@ if __name__ == '__main__':
 
             for epoch in range(100):
                 print(f'Epoch: {epoch}')
-                start_t = _writeline_and_time('\tUpdating...')
+                start_t = writeline_and_time('\tUpdating...')
 
                 shuffled_indices = np.random.permutation(np.arange(len(user_train)))
                 user_train = user_train[shuffled_indices]
