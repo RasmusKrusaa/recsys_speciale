@@ -458,7 +458,6 @@ def preprocess_data(u_train, u_test, i_train, i_test, u_friend, v_friend):
             train_q_set[u].append(num_items)
 
     # Building training set for interactions
-    # TODO: remove items asked in questionnaire
     train_set = {}
     max_items = 0
     for u in range(len(u_train)):
