@@ -27,7 +27,7 @@ unique_iid = data['iid'].unique()
 num_users = len(unique_uid)
 num_items = len(unique_iid)
 
-train_data, test_data = utils.train_test_split(data)
+train_data, test_data = utils.train_test_split_user(data)
 social_data = load_data(os.path.join(DATA_ROOT, 'trust.csv'))
 
 with open('../LRMF/models/tree25-75.txt', 'rb') as f:
@@ -344,7 +344,7 @@ def train_step(u_batch, i_batch, s_batch, q_batch):
     return loss, wi, ws, wq
 
 
-def eval_step(testset: dict, train_r, test_r, batch_size : int):
+def eval_step(testset: dict, train_r, test_r, batch_size: int):
     """
     Evaluates the model (recall and ndcg)
     """
@@ -355,7 +355,14 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
     n_batches = int(n_test_users / batch_size) + 1
 
     recall10 = []
+    recall50 = []
+    recall100 = []
+    precision10 = []
+    precision50 = []
+    precision100 = []
     ndcg10 = []
+    ndcg50 = []
+    ndcg100 = []
 
     for batch_num in range(n_batches):
         start_idx = batch_num * batch_size
@@ -382,9 +389,11 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
         # Setting predictions for those items to minus inf such that we will not evaluate them
         predictions[idx] = -np.inf
 
-        # Computing recall
+        # Computing recall and precision
         recall = []
-        for k in [10]:  # [10, 50, 100]
+        precision = []
+        ndcg = []
+        for k in [10, 50, 100]:
             idx_topk_items = np.argpartition(-predictions, k, 1)
             bin_predictions = np.zeros_like(predictions, dtype=bool)
             bin_predictions[np.arange(n_batch_users)[:, np.newaxis], idx_topk_items[:, :k]] = True
@@ -393,11 +402,9 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
             bin_true[test_r[u_b].nonzero()] = True
 
             recommended_and_relevant = (np.logical_and(bin_true, bin_predictions).sum(axis=1)).astype(np.float32)
-            recall.append(recommended_and_relevant/np.minimum(k, bin_true.sum(axis=1)))
+            recall.append(recommended_and_relevant / bin_true.sum(axis=1))
+            precision.append(recommended_and_relevant / k)
 
-        # Computing ndcg
-        ndcg = []
-        for k in [10]: # [10, 50, 100]
             idx_top_k_items = np.argpartition(-predictions, k, 1)
             top_k_predictions = predictions[np.arange(n_batch_users)[:, np.newaxis], idx_top_k_items[:, :k]]
             idx_part = np.argsort(-top_k_predictions, axis=1)
@@ -411,14 +418,33 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
                              for n in test_batch.getnnz(axis=1)])
             ndcg.append(DCG / IDCG)
 
-        recall10.append(recall[0]) # recall50, 100
-        ndcg10.append(ndcg[0]) # ndcg50, 100
+        recall10.append(recall[0])
+        recall50.append(recall[1])
+        recall100.append(recall[2])
+        precision10.append(precision[0])
+        precision50.append(precision[1])
+        precision100.append(precision[2])
+        ndcg10.append(ndcg[0])
+        ndcg50.append(ndcg[1])
+        ndcg100.append(ndcg[2])
 
-    recall10 = np.hstack(recall10)
-    ndcg10 = np.hstack(ndcg10)
+    recall10 = np.mean(np.hstack(recall10))
+    recall50 = np.mean(np.hstack(recall50))
+    recall100 = np.mean(np.hstack(recall100))
+    precision10 = np.mean(np.hstack(precision10))
+    precision50 = np.mean(np.hstack(precision50))
+    precision100 = np.mean(np.hstack(precision100))
+    ndcg10 = np.mean(np.hstack(ndcg10))
+    ndcg50 = np.mean(np.hstack(ndcg50))
+    ndcg100 = np.mean(np.hstack(ndcg100))
 
-    print(f'Recall@10: {np.mean(recall10)}. NDCG@10: {np.mean(ndcg10)}')
-    # TODO: write to file
+    print_metrics([ndcg10, ndcg50, ndcg100], [precision10, precision50, precision100], [recall10, recall50, recall100])
+
+
+def print_metrics(ndcgs, precisions, recalls):
+    ks = [10, 50, 100]
+    for i, k in enumerate(ks):
+        print(f'NDCG@{k}: {ndcgs[i]} \t Precision@{k}: {precisions[i]} \t Recall@{k}: {recalls[i]}')
 
 
 def get_train_instances(train_r_set: dict, train_s_set: dict, train_q_set: dict):

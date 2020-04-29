@@ -27,16 +27,18 @@ unique_iid = data['iid'].unique()
 num_users = len(unique_uid)
 num_items = len(unique_iid)
 
-train_data, test_data = utils.train_test_split(data)
+train_data, test_data = utils.train_test_split_user(data)
 social_data = load_data(os.path.join(DATA_ROOT, 'trust.csv'))
 
 with open('../LRMF/models/tree25-75.txt', 'rb') as f:
     tree = pickle.load(f)
 
+
 def writeline_and_time(s):
     sys.stdout.write(s)
     sys.stdout.flush()
     return time.time()
+
 
 class EATNN:
     """
@@ -44,7 +46,8 @@ class EATNN:
     Authors: Chong Chen, Min Zhang, Chenyang Wang, Weizhi Ma, Minming Li, Shaoping Ma
     url: http://www.thuir.cn/group/~mzhang/publications/SIGIR2019ChenC.pdf
     """
-    def __init__(self, n_users, n_items, max_questions, max_items, max_friends, embedding_size = 64, attention_size = 32):
+
+    def __init__(self, n_users, n_items, max_questions, max_items, max_friends, embedding_size=64, attention_size=32):
         """
         Constructs object of EATNN class
 
@@ -80,16 +83,16 @@ class EATNN:
         """
         # Weights to map uid into embeddings representing shared knowledge in item and social domains (u^c in paper)
         self.uw_c = tf.Variable(tf.random.truncated_normal(shape=[self.n_users, self.embedding_size],
-                                                                mean=0.0, stddev=0.01, dtype = tf.float32, name='uc'))
+                                                           mean=0.0, stddev=0.01, dtype=tf.float32, name='uc'))
         # Weights to map uid into embeddings representing preferences to items (u^i in paper)
         self.uw_i = tf.Variable(tf.random.truncated_normal(shape=[self.n_users, self.embedding_size],
-                                                              mean=0.0, stddev=0.01, dtype=tf.float32, name='ui'))
+                                                           mean=0.0, stddev=0.01, dtype=tf.float32, name='ui'))
         # Weights to map uid into embeddings preferences to items (u^s in paper)
         self.uw_s = tf.Variable(tf.random.truncated_normal(shape=[self.n_users, self.embedding_size],
-                                                                mean=0.0, stddev=0.01, dtype=tf.float32, name='us'))
+                                                           mean=0.0, stddev=0.01, dtype=tf.float32, name='us'))
         # Weights to map uid into embeddings for questionnaires
         self.uw_q = tf.Variable(tf.random.truncated_normal(shape=[self.n_users, self.embedding_size],
-                                                                mean=0.0, stddev=0.01, dtype=tf.float32, name='uq'))
+                                                           mean=0.0, stddev=0.01, dtype=tf.float32, name='uq'))
         # TODO: figure out why they +1 in sizes
         # Embeddings for items (M x D)
         self.Q = tf.Variable(tf.random.truncated_normal(shape=[self.n_items + 1, self.embedding_size],
@@ -100,7 +103,6 @@ class EATNN:
         # Embeddings for questionnaires (M x D)
         self.V = tf.Variable(tf.random.truncated_normal(shape=[self.n_items + 1, self.embedding_size],
                                                         mean=0.0, stddev=0.01, dtype=tf.float32, name='V'))
-
 
         # Weights used in item domain prediction layer
         self.H_i = tf.Variable(tf.constant(0.01, shape=[self.embedding_size, 1]), name='hi')
@@ -113,8 +115,8 @@ class EATNN:
         self.W_item = tf.Variable(
             tf.random.truncated_normal(shape=[self.embedding_size, self.attention_size], mean=0.0, stddev=tf.sqrt(
                 tf.divide(2.0, self.attention_size + self.embedding_size))), dtype=tf.float32, name='Witem')
-        self.B_item = tf.Variable(tf.constant(0.00, shape=[self.attention_size]), name='Bitem') # 1 x k
-        self.H_item = tf.Variable(tf.constant(0.01, shape=[self.attention_size, 1], name='Hitem')) # k x 1
+        self.B_item = tf.Variable(tf.constant(0.00, shape=[self.attention_size]), name='Bitem')  # 1 x k
+        self.H_item = tf.Variable(tf.constant(0.01, shape=[self.attention_size, 1], name='Hitem'))  # k x 1
 
         # Social domain attention network parameters
         self.W_social = tf.Variable(
@@ -162,8 +164,10 @@ class EATNN:
         Social attentive transfer (eq. 5)
         """
         # eq. 3 for computing attentions
-        social_attention = tf.exp(tf.matmul(tf.nn.relu(tf.matmul(self.u_s, self.W_social) + self.B_social), self.H_social))
-        common_attention = tf.exp(tf.matmul(tf.nn.relu(tf.matmul(self.u_c, self.W_social) + self.B_social), self.H_social))
+        social_attention = tf.exp(
+            tf.matmul(tf.nn.relu(tf.matmul(self.u_s, self.W_social) + self.B_social), self.H_social))
+        common_attention = tf.exp(
+            tf.matmul(tf.nn.relu(tf.matmul(self.u_c, self.W_social) + self.B_social), self.H_social))
         # eq. 4 for computing weights
         social_weight = tf.divide(social_attention, social_attention + common_attention)
         common_weight = 1.0 - social_weight
@@ -180,8 +184,10 @@ class EATNN:
         Works the same way, as the attentive networks in paper.
         """
         # eq. 3 for computing attentions
-        q_attention = tf.exp(tf.matmul(tf.nn.relu(tf.matmul(self.u_q, self.W_question) + self.B_question), self.H_question))
-        common_attention = tf.exp(tf.matmul(tf.nn.relu(tf.matmul(self.u_c, self.W_question) + self.B_question), self.H_question))
+        q_attention = tf.exp(
+            tf.matmul(tf.nn.relu(tf.matmul(self.u_q, self.W_question) + self.B_question), self.H_question))
+        common_attention = tf.exp(
+            tf.matmul(tf.nn.relu(tf.matmul(self.u_c, self.W_question) + self.B_question), self.H_question))
         # eq. 4 for computing weights
         q_weight = tf.divide(q_attention, q_attention + common_attention)
         common_weight = 1.0 - q_weight
@@ -273,8 +279,8 @@ class EATNN:
             tf.reduce_sum(
                 tf.reduce_sum(
                     tf.einsum('ab,ac->abc', self.Q, self.Q), 0) *
-                    tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_iu, self.P_iu), 0) *
-                    tf.matmul(self.H_i, self.H_i, transpose_b=True), 0), 0)
+                tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_iu, self.P_iu), 0) *
+                tf.matmul(self.H_i, self.H_i, transpose_b=True), 0), 0)
         self.loss_item += tf.reduce_sum((1.0 - self.weight_r) * tf.square(self.pos_r) - 2.0 * self.pos_r)
 
         # Loss for social domain (eq. 14)
@@ -282,8 +288,8 @@ class EATNN:
             tf.reduce_sum(
                 tf.reduce_sum(
                     tf.einsum('ab,ac->abc', self.G, self.G), 0) *
-                    tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_su, self.P_su), 0) *
-                    tf.matmul(self.H_s, self.H_s, transpose_b=True), 0), 0)
+                tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_su, self.P_su), 0) *
+                tf.matmul(self.H_s, self.H_s, transpose_b=True), 0), 0)
         self.loss_social += tf.reduce_sum((1.0 - self.weight_x) * tf.square(self.pos_f) - 2.0 * self.pos_f)
 
         # TODO: consider this loss for questionnaire
@@ -291,8 +297,8 @@ class EATNN:
             tf.reduce_sum(
                 tf.reduce_sum(
                     tf.einsum('ab,ac->abc', self.V, self.V), 0) *
-                    tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_qu, self.P_qu), 0) *
-                    tf.matmul(self.H_q, self.H_q, transpose_b=True), 0), 0)
+                tf.reduce_sum(tf.einsum('ab,ac->abc', self.P_qu, self.P_qu), 0) *
+                tf.matmul(self.H_q, self.H_q, transpose_b=True), 0), 0)
         self.loss_item += tf.reduce_sum((1.0 - self.weight_q) * tf.square(self.pos_q) - 2.0 * self.pos_q)
 
         # adding l2 regularization on social, item and questionnaire attentive user embeddings
@@ -302,7 +308,8 @@ class EATNN:
         # l2 regularization on social domain model parameters
         self.l2_loss_social = tf.nn.l2_loss(self.W_social) + tf.nn.l2_loss(self.B_social) + tf.nn.l2_loss(self.H_social)
         # l2 regularization on questionnaire domain model parameters
-        self.l2_loss_question = tf.nn.l2_loss(self.W_question) + tf.nn.l2_loss(self.B_question) + tf.nn.l2_loss(self.H_question)
+        self.l2_loss_question = tf.nn.l2_loss(self.W_question) + tf.nn.l2_loss(self.B_question) + tf.nn.l2_loss(
+            self.H_question)
 
         # adding everything together
         self.loss = self.loss_item + self.mu * self.loss_social + self.mu * self.loss_question \
@@ -339,7 +346,24 @@ def train_step(u_batch, i_batch, s_batch, q_batch):
     return loss, wi, ws, wq
 
 
-def eval_step(testset: dict, train_r, test_r, batch_size : int):
+def get_train_instances(train_r_set: dict, train_s_set: dict, train_q_set: dict):
+    user_train, item_train, social_train, question_train = [], [], [], []
+    for user in train_r_set.keys():
+        user_train.append(user)
+        item_train.append(train_r_set[user])
+        social_train.append(train_s_set[user])
+        question_train.append(train_q_set[user])
+
+    user_train = np.array(user_train)
+    item_train = np.array(item_train)
+    social_train = np.array(social_train)
+    question_train = np.array(question_train)
+    user_train = user_train[:, np.newaxis]
+
+    return user_train, item_train, social_train, question_train
+
+
+def eval_step(testset: dict, train_r, test_r, batch_size: int):
     """
     Evaluates the model (recall and ndcg)
     """
@@ -350,7 +374,14 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
     n_batches = int(n_test_users / batch_size) + 1
 
     recall10 = []
+    recall50 = []
+    recall100 = []
+    precision10 = []
+    precision50 = []
+    precision100 = []
     ndcg10 = []
+    ndcg50 = []
+    ndcg100 = []
 
     for batch_num in range(n_batches):
         start_idx = batch_num * batch_size
@@ -377,9 +408,11 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
         # Setting predictions for those items to minus inf such that we will not evaluate them
         predictions[idx] = -np.inf
 
-        # Computing recall
+        # Computing recall and precision
         recall = []
-        for k in [10]:  # [10, 50, 100]
+        precision = []
+        ndcg = []
+        for k in [10, 50, 100]:
             idx_topk_items = np.argpartition(-predictions, k, 1)
             bin_predictions = np.zeros_like(predictions, dtype=bool)
             bin_predictions[np.arange(n_batch_users)[:, np.newaxis], idx_topk_items[:, :k]] = True
@@ -388,11 +421,9 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
             bin_true[test_r[u_b].nonzero()] = True
 
             recommended_and_relevant = (np.logical_and(bin_true, bin_predictions).sum(axis=1)).astype(np.float32)
-            recall.append(recommended_and_relevant/np.minimum(k, bin_true.sum(axis=1)))
+            recall.append(recommended_and_relevant / bin_true.sum(axis=1))
+            precision.append(recommended_and_relevant / k)
 
-        # Computing ndcg
-        ndcg = []
-        for k in [10]: # [10, 50, 100]
             idx_top_k_items = np.argpartition(-predictions, k, 1)
             top_k_predictions = predictions[np.arange(n_batch_users)[:, np.newaxis], idx_top_k_items[:, :k]]
             idx_part = np.argsort(-top_k_predictions, axis=1)
@@ -406,32 +437,33 @@ def eval_step(testset: dict, train_r, test_r, batch_size : int):
                              for n in test_batch.getnnz(axis=1)])
             ndcg.append(DCG / IDCG)
 
-        recall10.append(recall[0]) # recall50, 100
-        ndcg10.append(ndcg[0]) # ndcg50, 100
+        recall10.append(recall[0])
+        recall50.append(recall[1])
+        recall100.append(recall[2])
+        precision10.append(precision[0])
+        precision50.append(precision[1])
+        precision100.append(precision[2])
+        ndcg10.append(ndcg[0])
+        ndcg50.append(ndcg[1])
+        ndcg100.append(ndcg[2])
 
-    recall10 = np.hstack(recall10)
-    ndcg10 = np.hstack(ndcg10)
+    recall10 = np.mean(np.hstack(recall10))
+    recall50 = np.mean(np.hstack(recall50))
+    recall100 = np.mean(np.hstack(recall100))
+    precision10 = np.mean(np.hstack(precision10))
+    precision50 = np.mean(np.hstack(precision50))
+    precision100 = np.mean(np.hstack(precision100))
+    ndcg10 = np.mean(np.hstack(ndcg10))
+    ndcg50 = np.mean(np.hstack(ndcg50))
+    ndcg100 = np.mean(np.hstack(ndcg100))
 
-    print(f'Recall@10: {np.mean(recall10)}. NDCG@10: {np.mean(ndcg10)}')
-    # TODO: write to file
+    print_metrics([ndcg10, ndcg50, ndcg100], [precision10, precision50, precision100], [recall10, recall50, recall100])
 
 
-def get_train_instances(train_r_set: dict, train_s_set: dict, train_q_set: dict):
-    user_train, item_train, social_train, question_train = [], [], [], []
-    for user in train_r_set.keys():
-        user_train.append(user)
-        item_train.append(train_r_set[user])
-        social_train.append(train_s_set[user])
-        question_train.append(train_q_set[user])
-
-    user_train = np.array(user_train)
-    item_train = np.array(item_train)
-    social_train = np.array(social_train)
-    question_train = np.array(question_train)
-    user_train = user_train[:, np.newaxis]
-
-    return user_train, item_train, social_train, question_train
-
+def print_metrics(ndcgs, precisions, recalls):
+    ks = [10, 50, 100]
+    for i, k in enumerate(ks):
+        print(f'NDCG@{k}: {ndcgs[i]} \t Precision@{k}: {precisions[i]} \t Recall@{k}: {recalls[i]}')
 
 def preprocess_data(u_train, u_test, i_train, i_test, u_friend, v_friend):
     # Building interactions test set
@@ -526,12 +558,14 @@ if __name__ == '__main__':
             model = EATNN(num_users, num_items, max_questions, max_items, max_friends)
             model.build_graph()
 
-            optimizer = tf.train.AdagradOptimizer(learning_rate=0.05, initial_accumulator_value=1e-8).minimize(model.loss)
+            optimizer = tf.train.AdagradOptimizer(learning_rate=0.05, initial_accumulator_value=1e-8).minimize(
+                model.loss)
             train_op = optimizer
 
             sess.run(tf.global_variables_initializer())
 
-            user_train, item_train, friend_train, question_train = get_train_instances(train_set, train_f_set, train_q_set)
+            user_train, item_train, friend_train, question_train = get_train_instances(train_set, train_f_set,
+                                                                                       train_q_set)
 
             for epoch in range(100):
                 print(f'Epoch: {epoch}')
