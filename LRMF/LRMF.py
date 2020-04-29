@@ -41,7 +41,7 @@ class LRMF():
             self.candidate_items = candidate_items
         else:
             self.candidate_items = self._find_candidate_items()
-            with open('data/candidate_items.txt', 'wb') as f:
+            with open('data/candidate_ciao_80_20.txt', 'wb') as f:
                 pickle.dump(self.candidate_items, f)
 
     def fit(self, tol: float = 0.01, maxiters: int = 10):
@@ -187,7 +187,7 @@ class LRMF():
         return T
 
     def _split_users(self, users, iid):
-        like = [uid for uid in users if self.R[uid, iid] == 1]  # inner uids of users who like inner iid
+        like = [uid for uid in users if self.R[uid, iid] >= 4]  # inner uids of users who like inner iid
         dislike = list(set(users) - set(like))  # inner iids of users who dislike inner iid
 
         return like, dislike
@@ -203,11 +203,13 @@ class LRMF():
         S = np.zeros(shape=(self.num_users, self.embedding_size))
 
         for inner_uid in range(self.num_users):
-            raw_uid = self.inner_2raw_uid[inner_uid]
-            leaf = Tree.find_user_group(raw_uid, tree)
-            B = self._build_B([raw_uid], leaf.local_questions, leaf.global_questions)
+            leaf = Tree.find_user_group(inner_uid, tree)
+            B = self._build_B([inner_uid], leaf.local_questions, leaf.global_questions)
 
-            S[inner_uid] = B @ leaf.transformation
+            try:
+                S[inner_uid] = B @ leaf.transformation
+            except ValueError:
+                print('Arrhhh shit, here we go again')
 
         return inv(S.T @ S + self.beta * np.identity(self.embedding_size)) @ S.T @ self.R
 
@@ -252,38 +254,41 @@ class LRMF():
 
         for raw_uid in users:
             leaf = Tree.traverse_a_user(user=raw_uid, data=self.test_data.astype(str).astype(int), tree=tree)  # replace with a traverse
+            U1 = np.zeros(shape=(1, len(leaf.global_questions)))
+            for idx, gq in enumerate(leaf.global_questions):
+                try:
+                    U1[:,idx] = int(R[self.raw_2inner_iid[gq]].loc[raw_uid])
+                except KeyError:
+                    U1[:,idx] = 0
 
-            U1 = None
+            U2 = np.zeros(shape=(1, len(leaf.local_questions)))
+            for idx, lq in enumerate(leaf.local_questions):
+                try:
+                    U2[:,idx] = int(R[self.raw_2inner_iid[lq]].loc[raw_uid])
+                except KeyError:
+                    U2[:,idx] = 0
 
-            try:
-                U1 = R[leaf.global_questions].loc[raw_uid].to_numpy()
-            except KeyError:
-                print('noooo')
+            B = np.hstack((U1, U2, np.ones(shape=(1, 1))))
 
-            U2 = R[leaf.local_questions].loc[raw_uid].to_numpy()
-            B = np.hstack((U1, U2, np.ones(1)))
+            ids_to_remove = list(set(self.train_data.iid).difference(set(self.test_data.iid)))
+            inner_ids_to_remove = [self.raw_2inner_iid[id] for id in ids_to_remove]
+            test_V = np.delete(self.V, inner_ids_to_remove, axis=1)
 
             T = leaf.transformation
-            pred = B @ T @ self.V
+            pred = B @ T @ test_V
             train_iids = list(self.train_data[self.train_data['uid'] == raw_uid].iid)
             questions = leaf.global_questions + leaf.local_questions
 
-            try:
-                pred[train_iids] = -np.inf
-            except KeyError:
-                print('Encountered a key error here')
-
-            if any(x > 11211 for x in questions):
-                print('sss')
-            try:
-                pred[questions] = -np.inf
-            except KeyError:
-                print('Encountered a key error here')
-
+            for q in questions:
+                inner_q = self.raw_2inner_iid[q]
+                try:
+                    pred[inner_q] = -np.inf
+                except IndexError:
+                    pass
 
             # find actuals
             actual = R.loc[raw_uid].to_numpy()
-            m = eval2.Metrics2(np.array([pred]), np.array([actual]), 10, 'ndcg').calculate()
+            m = eval2.Metrics2(pred, np.array([actual]), 10, 'ndcg').calculate()
             metric += m['ndcg']
 
         return metric / len(self.test_data.uid.unique())
@@ -309,18 +314,22 @@ def test_tree(users, items, depth):
 
 if __name__ == '__main__':
     # Initialize things.
-    data = utils.load_data('ratings.csv')
-    with open('data/candidate_items.txt', 'rb') as f:
-        candidate_items = pickle.load(f)
+    data = utils.load_data('ciao/ratings.csv')#.astype('int')
+#    data.columns = ['uid', 'iid', 'count', 'timestamps']
+#    data = data.drop('timestamps', axis=1)
+#    data = data.sort_values(by=['uid'])
 
-    global_questions = 2
-    local_questions = 1
-    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidate_items)
+    with open(f'data/candidate_ciao_80_20.txt', 'rb') as f:
+        candidate_set = pickle.load(f)
+
+    global_questions = 1
+    local_questions = 4
+    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidate_set)
     res, V, ndcg_list = lrmf.fit()
 
-    with open(f'models/tree25-75.txt', 'wb') as f:
+    with open(f'models/tree_ciao_explicit_80_20_5_questions.txt', 'wb') as f:
         pickle.dump(res, f)
-    with open(f'models/V25-75.txt', 'wb') as f:
+    with open(f'models/V_ciao_explicit_80_20_5_questions.txt', 'wb') as f:
         pickle.dump(V, f)
 
     print('hejsa')
