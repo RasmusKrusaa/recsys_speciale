@@ -30,7 +30,7 @@ def load_data(csv_file):
     return data
 
 data = load_data(os.path.join(DATA_ROOT, 'ratings.csv'))
-test_data, train_data = utils.train_test_split_user(data)
+test_data, train_data = utils.train_test_split(data)
 social_data = load_data(os.path.join(DATA_ROOT, 'trust.csv'))
 
 

@@ -27,7 +27,7 @@ unique_iid = data['iid'].unique()
 num_users = len(unique_uid)
 num_items = len(unique_iid)
 
-train_data, test_data = utils.train_test_split_user(data)
+train_data, test_data = utils.train_test_split(data)
 social_data = load_data(os.path.join(DATA_ROOT, 'trust.csv'))
 
 with open('../LRMF/models/tree25-75.txt', 'rb') as f:
