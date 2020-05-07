@@ -1,4 +1,7 @@
+import os
 from collections import defaultdict
+
+from tqdm import tqdm
 from scipy.linalg import solve_sylvester
 import scipy.sparse
 
@@ -27,7 +30,7 @@ class LRMF():
         self.num_candidate_items = num_candidate_items
         self.num_global_questions = num_global_questions
         self.num_local_questions = num_local_questions
-        self.train_data, self.test_data = utils.train_test_split_user(data)
+        self.train_data, self.test_data = utils.train_test_split(data)
         self.inner_2raw_uid, self.raw_2inner_uid, self.inner_2raw_iid, self.raw_2inner_iid = utils.build_id_dicts(data)
         self.R = utils.build_interaction_matrix(self.train_data, self.raw_2inner_uid, self.raw_2inner_iid)
         self.test_R = utils.build_interaction_matrix(self.test_data, self.raw_2inner_uid, self.raw_2inner_iid)
@@ -41,7 +44,7 @@ class LRMF():
             self.candidate_items = candidate_items
         else:
             self.candidate_items = self._find_candidate_items()
-            with open('data/candidate_ciao_80_20.txt', 'wb') as f:
+            with open('data/candidate_ciao_exp_25-75.pkl', 'wb') as f:
                 pickle.dump(self.candidate_items, f)
 
     def fit(self, tol: float = 0.01, maxiters: int = 10):
@@ -55,8 +58,6 @@ class LRMF():
 
         ndcg_list = []
         loss = []
-        prev_loss = np.inf
-        tree = None
         for epoch in range(maxiters):
             maxvol_representatives, _ = maxvol.maxvol(self.V.T)
 
@@ -76,7 +77,7 @@ class LRMF():
 
             loss.append(epoch_loss)
 
-            ndcg = self.evaluate(tree)
+            ndcg, prec, recall = self.evaluate(tree)
 
             if epoch_loss < best_loss:
                 best_loss = epoch_loss
@@ -84,11 +85,15 @@ class LRMF():
                 best_ndcg = ndcg
                 best_V = self.V
 
-            print(f'this is the ndcg: {ndcg}')
+            print(f'ndcg@10: {ndcg}, prec@10: {prec}, recall@10: {recall}')
             ndcg_list.append(ndcg)
 
         print(f'The ndcg at the lowest loss was {best_ndcg}')
-        return best_tree, best_V, ndcg_list
+
+        self.tree = best_tree
+        self.V = best_V
+        # CHANGE MODELNAME
+        self.store_model('ciao_exp_25-75.pkl')
 
     def _find_candidate_items(self):
         # building item-item colike network
@@ -122,13 +127,14 @@ class LRMF():
 
             print(f'At depth: {depth}. Time: {time.strftime("%H:%M:%S", time.localtime())}')
             print(f'Finding best candidate item')
-            # computes loss with equation 11 for each candidate item
             loss = defaultdict(float)
             loss_like = defaultdict(float)
             loss_dislike = defaultdict(float)
 
+            # computes loss with equation 11 for each candidate item
             for item in items:
                 like, dislike = self._split_users(users, item)
+
                 loss_like[item] = self._evaluate_eq11(like, global_representatives, local_representatives)
                 loss_dislike[item] = self._evaluate_eq11(dislike, global_representatives, local_representatives)
                 loss[item] += loss_like[item]
@@ -244,16 +250,21 @@ class LRMF():
             self._set_globals_learn_locals_and_build_T(tree.dislike, maxvol, g_q)
 
     def evaluate(self, tree):
-        metric = 0
+        precision10 = 0
+        precision50 = 0
+        precision100 = 0
+        recall10 = 0
+        recall50 = 0
+        recall100 = 0
+        ndcg10 = 0
+        ndcg50 = 0
+        ndcg100 = 0
         # convert from object to string to numeric..
-        users = np.sort(self.test_data.uid.unique().astype(str).astype(int))
-        R = pd.pivot_table(data=self.test_data.astype(str).astype(int), values='count', index='uid', columns='iid').fillna(0)
+        users = np.sort(self.test_data.uid.unique())
+        R = pd.pivot_table(data=self.test_data, values='rating', index='uid', columns='iid').fillna(0)
 
-#        pred = np.ndarray(shape=(self.V.shape[1], len(users)))
-#        pred = pd.DataFrame(data=0, columns=range(self.V.shape[1]), index=pd.Series(users))
-
-        for raw_uid in users:
-            leaf = Tree.traverse_a_user(user=raw_uid, data=self.test_data.astype(str).astype(int), tree=tree)  # replace with a traverse
+        for raw_uid in tqdm(users, desc='Evaluating...'):
+            leaf = Tree.traverse_a_user(user=raw_uid, data=self.test_data, tree=tree)  # replace with a traverse
             U1 = np.zeros(shape=(1, len(leaf.global_questions)))
             for idx, gq in enumerate(leaf.global_questions):
                 try:
@@ -288,10 +299,29 @@ class LRMF():
 
             # find actuals
             actual = R.loc[raw_uid].to_numpy()
-            m = eval2.Metrics2(pred, np.array([actual]), 10, 'ndcg').calculate()
-            metric += m['ndcg']
+            m10 = eval2.Metrics2(pred, np.array([actual]), 10, 'ndcg,precision,recall').calculate()
+            ndcg10 += m10['ndcg']
+            precision10 += m10['precision']
+            recall10 += m10['recall']
+            m50 = eval2.Metrics2(pred, np.array([actual]), 50, 'ndcg,precision,recall').calculate()
+            ndcg50 += m50['ndcg']
+            precision50 += m50['precision']
+            recall50 += m50['recall']
+            m100 = eval2.Metrics2(pred, np.array([actual]), 100, 'ndcg,precision,recall').calculate()
+            ndcg100 += m100['ndcg']
+            precision100 += m100['precision']
+            recall100 += m100['recall']
 
-        return metric / len(self.test_data.uid.unique())
+        n_test_users = len(self.test_data.uid.unique())
+        return (ndcg10 / n_test_users), ndcg50 / n_test_users, ndcg100 / n_test_users,\
+               precision10 / n_test_users, precision50 / n_test_users, precision100 / n_test_users,\
+               recall10 / n_test_users, recall50 / n_test_users, recall100 / n_test_users
+        #return ndcg10 / n_test_users, precision10 / n_test_users, recall10 / n_test_users
+
+    def store_model(self, file):
+        DATA_ROOT = 'models'
+        with open(os.path.join(DATA_ROOT, file), 'wb') as f:
+            pickle.dump(self, f)
 
 
 def test_tree(users, items, depth):
@@ -313,23 +343,14 @@ def test_tree(users, items, depth):
 
 
 if __name__ == '__main__':
-    # Initialize things.
-    data = utils.load_data('ciao/ratings.csv')#.astype('int')
-#    data.columns = ['uid', 'iid', 'count', 'timestamps']
-#    data = data.drop('timestamps', axis=1)
-#    data = data.sort_values(by=['uid'])
-
-    with open(f'data/candidate_ciao_80_20.txt', 'rb') as f:
-        candidate_set = pickle.load(f)
-
+    data = pd.read_csv('../data/ciao_explicit_preprocessed/new_ratings.csv')
+    with open('data/candidate_ciao_exp_25-75.pkl', 'rb') as f:
+        candidates = pickle.load(f)
     global_questions = 1
-    local_questions = 4
-    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidate_set)
-    res, V, ndcg_list = lrmf.fit()
+    local_questions = 2
+    lrmf = LRMF(data, global_questions, local_questions, candidate_items=candidates)
+    lrmf.fit()
 
-    with open(f'models/tree_ciao_explicit_80_20_5_questions.txt', 'wb') as f:
-        pickle.dump(res, f)
-    with open(f'models/V_ciao_explicit_80_20_5_questions.txt', 'wb') as f:
-        pickle.dump(V, f)
 
-    print('hejsa')
+
+
