@@ -1,0 +1,8 @@
+# cold users
+(raw_)train1 and (raw_)test1 are a 25/75% split for each user (a user can be in both train and test). Seed = 2020
+# extreme cold users
+(raw_)train2 and (raw_)test2 are 70/30% split on users (meaning a user is either in train or test). Seed = 2020
+
+
+- raw_x denotes the ids of users and items are the same as from original data, where files without raw_ denotes that the ids
+of users and items are translated.

@@ -1,14 +1,13 @@
+import os
 import random
+import time
 from collections import defaultdict
 
-from sklearn.model_selection import train_test_split
-import pandas as pd
-import numpy as np
-import os
 import networkx as net
-import time
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 from scipy.sparse import csr_matrix
-from sklearn.model_selection import GroupShuffleSplit
 
 DATA_ROOT = 'data/ciao'
 
@@ -31,7 +30,8 @@ def build_colike_network(data: pd.DataFrame):
 
     G = net.DiGraph()
     summed_weight_dict = defaultdict(int)
-    for iid_1 in unique_iids:
+    print('Building colike network')
+    for iid_1 in tqdm(unique_iids):
         # uids for users who have consumed iid 1
         users_consumed_iid1 = list(data['uid'][data['iid'] == iid_1])
         # all data for uids who have consumed iid 1
@@ -49,7 +49,6 @@ def build_colike_network(data: pd.DataFrame):
                     G.add_edge(iid_1, iid_2, weight=colike_count)
                     # used for normalization later
                     summed_weight_dict[iid_1] += colike_count
-        print(f'Done with item {iid_1} at {time.strftime("%H:%M:%S", time.localtime())}')
     # Normalizing weights
     print('Normalizing weights...')
     for (u, v, weight) in G.edges(data='weight'):
@@ -62,7 +61,7 @@ def build_colike_network(data: pd.DataFrame):
 def build_interaction_matrix(data: pd.DataFrame, raw_2inner_uid: dict, raw_2inner_iid: dict):
     inner_uids = np.array([raw_2inner_uid[uid] for uid in data['uid']])
     inner_iids = np.array([raw_2inner_iid[iid] for iid in data['iid']])
-    interactions = np.array(data['count'], dtype=int)
+    interactions = np.array(data['rating'], dtype=int)
     R = csr_matrix((interactions, (inner_uids, inner_iids)), shape=(len(raw_2inner_uid), len(raw_2inner_iid)))
 
     return R
@@ -74,8 +73,8 @@ def train_test_split_user(data: pd.DataFrame, test_size: float = 0.3):
     num_test_users = int(test_size*len(unique_uids))
     test_users, train_users = unique_uids[:num_test_users], unique_uids[num_test_users:]
 
-    train = pd.DataFrame(columns=['uid', 'iid', 'count'])
-    test = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    train = pd.DataFrame(columns=['uid', 'iid', 'rating'])
+    test = pd.DataFrame(columns=['uid', 'iid', 'rating'])
     for uid in train_users:
         user_data = data[data['uid'] == uid]
         train = train.append(user_data)
@@ -91,8 +90,8 @@ def train_test_split(data: pd.DataFrame, test_size: float = 0.75):
     # removing items with less than 5 interactions
     data = data.groupby('iid').filter(lambda iid: len(iid) >= 5)
 
-    train = pd.DataFrame(columns=['uid', 'iid', 'count'])
-    test = pd.DataFrame(columns=['uid', 'iid', 'count'])
+    train = pd.DataFrame(columns=['uid', 'iid', 'rating'])
+    test = pd.DataFrame(columns=['uid', 'iid', 'rating'])
     for uid in unique_uids:
         # shuffled user data
         user_data = data[data['uid'] == uid].sample(frac=1, random_state=2020)

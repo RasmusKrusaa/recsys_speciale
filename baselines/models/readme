@@ -1,0 +1,2 @@
+cold-start-bpr: default params during training. Traindata=train1, testdata=test1
+extreme-cold-start-bpr: default params during training. Traindata=train2, testdata=test2
